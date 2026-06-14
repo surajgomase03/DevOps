@@ -1,0 +1,32 @@
+# Ignore AWS CLI distribution artifacts and packaged binaries
+aws/dist/
+aws/*.zip
+aws/*.whl
+aws/**/*.dist-info/
+aws/**/__pycache__/
+
+# Ignore temporary and Python build files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE and OS files
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Localstack / aws local CLI artifacts
+localstack/
+awslocal/
+
+# Ignore any temporary docx copies
+**/*.copy.docx
