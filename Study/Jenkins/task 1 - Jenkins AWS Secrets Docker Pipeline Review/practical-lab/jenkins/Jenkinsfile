@@ -1,0 +1,114 @@
+pipeline {
+  agent any
+
+  options {
+    timestamps()
+    timeout(time: 30, unit: 'MINUTES')
+    disableConcurrentBuilds()
+  }
+
+  environment {
+    AWS_DEFAULT_REGION = 'ap-south-1'
+    SECRET_ID = 'dev/dockerhub/jenkins-practical'
+    REGISTRY = 'docker.io'
+    IMAGE_REPO = 'REPLACE_DOCKERHUB_USERNAME/jenkins-practical'
+    DOCKER_BUILDKIT = '1'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        checkout scm
+      }
+    }
+
+    stage('Prepare Image Tag') {
+      steps {
+        script {
+          env.GIT_SHA_SHORT = sh(
+            script: 'git rev-parse --short=12 HEAD',
+            returnStdout: true
+          ).trim()
+          env.IMAGE_TAG = "build-${env.BUILD_NUMBER}-${env.GIT_SHA_SHORT}"
+          env.IMAGE = "${env.REGISTRY}/${env.IMAGE_REPO}:${env.IMAGE_TAG}"
+        }
+        echo "Image will be built as: ${env.IMAGE}"
+      }
+    }
+
+    stage('Preflight Check') {
+      steps {
+        sh '''
+          set -eu
+          aws --version
+          jq --version
+          docker version
+        '''
+      }
+    }
+
+    stage('Install App Dependencies') {
+      steps {
+        dir('practical-lab/app') {
+          sh '''
+            set -eu
+            npm install
+            npm test
+          '''
+        }
+      }
+    }
+
+    stage('Get Secret and Docker Login') {
+      steps {
+        sh '''
+          set +x
+          set -eu
+
+          SECRET_JSON=$(aws secretsmanager get-secret-value \
+            --secret-id "$SECRET_ID" \
+            --query SecretString \
+            --output text)
+
+          DOCKER_USER=$(printf '%s' "$SECRET_JSON" | jq -er '.username')
+          DOCKER_PASS=$(printf '%s' "$SECRET_JSON" | jq -er '.password')
+
+          printf '%s' "$DOCKER_PASS" | docker login "$REGISTRY" \
+            --username "$DOCKER_USER" \
+            --password-stdin
+        '''
+      }
+    }
+
+    stage('Docker Build') {
+      steps {
+        dir('practical-lab/app') {
+          sh '''
+            set -eu
+            docker build \
+              --label org.opencontainers.image.revision="$GIT_SHA_SHORT" \
+              -t "$IMAGE" \
+              .
+          '''
+        }
+      }
+    }
+
+    stage('Docker Push') {
+      steps {
+        sh '''
+          set -eu
+          docker push "$IMAGE"
+        '''
+      }
+    }
+  }
+
+  post {
+    always {
+      sh '''
+        docker logout "$REGISTRY" || true
+      '''
+    }
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "name": "jenkins-aws-secrets-docker-practical",
+  "version": "1.0.0",
+  "description": "Simple app for Jenkins AWS Secrets Manager Docker pipeline practical.",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test.js"
+  },
+  "dependencies": {
+    "express": "4.18.3"
+  }
+}
