@@ -1,0 +1,1 @@
+AWS (EC2, EKS, ECS, Fargate, Lambda, S3, VPC, IAM, RDS Multi-AZ, ALB, Auto Scaling, Route 53, CloudWatch, Secrets Manager, SQS, SNS, SES, WAF, CloudFormation, Cost Explorer), Azure (AKS, ACR, Azure DevOps Pipelines, Azure Key Vault, Azure Monitor, Azure Virtual Networks, NSGs, ARM Templates, Azure AD/Entra ID) |
