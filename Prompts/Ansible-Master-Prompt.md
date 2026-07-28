@@ -65,6 +65,7 @@ If the topic is already completely covered in the previous handbook:
 
 The new handbook should contain only NEW or UPDATED knowledge.
 
+
 ---
 
 ## Rule 4 – Topic Update Rule
@@ -600,3 +601,25 @@ At the end include:
 - Do not leave any important Ansible topic uncovered.
 - Make the notes comprehensive enough that no additional Ansible notes are required for senior DevOps interviews (5+ years, 20+ LPA).
 - Pointwise Notes Only: Every section must be written in bullet points and short structured notes. Do not use long paragraphs.
+
+Interview Question Integration Rule
+
+If the input contains interview questions (from text, PDF, DOCX, Markdown, or any other format), or if the input is an existing Markdown file that includes interview questions:
+
+Analyze each question individually.
+Identify the underlying concept or technology being tested (not just the wording of the question).
+Convert the question into structured handbook notes instead of storing it as a Q&A.
+Place the generated notes under the most relevant topic/chapter in the handbook (e.g., Kubernetes → Scheduling, Terraform → State Management, AWS → Auto Scaling, Linux → Processes).
+If the topic does not already exist, create a new section in the appropriate chapter.
+Before adding any content, check the entire handbook for duplicate concepts.
+If the same concept is already explained (even if the wording is different), treat it as a duplicate and do not add it again.
+If the new question contains additional useful information beyond the existing notes, merge only the missing information into the existing section instead of creating duplicate content.
+Preserve the handbook's formatting, numbering, and style.
+At the end, generate a summary containing:
+Questions processed
+New concepts added
+Existing concepts updated
+Duplicate questions skipped
+Handbook sections modified
+
+Goal: The handbook should remain a clean, deduplicated knowledge base organized by concepts rather than a collection of interview questions. Every interview question should enrich the relevant topic only if it introduces new knowledge.
