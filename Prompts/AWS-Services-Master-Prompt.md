@@ -821,13 +821,7 @@ Whenever diagrams would help
 
 Insert placeholders
 
-Example
 
-![AWS VPC Architecture](images/aws-vpc-architecture.png)
-
-![Kubernetes Networking](images/kubernetes-networking.png)
-
-![Terraform Workflow](images/terraform-workflow.png)
 
 ---
 
