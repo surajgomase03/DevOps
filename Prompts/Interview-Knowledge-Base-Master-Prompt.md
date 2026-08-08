@@ -68,10 +68,6 @@ If the topic is already completely covered in the previous handbook:
 
 ❌ Do NOT duplicate it.
 
-The new handbook should contain only NEW or UPDATED knowledge.
-
-If the input includes interview questions, or if the source is an existing Markdown notes file containing interview questions, convert them into interview-answer notes and place them under the most relevant topic. If that topic or the same concept is already covered in the handbook, mark it as duplicate and skip adding it again.
-
 ---
 
 ## Rule 4 – Topic Update Rule

@@ -138,7 +138,7 @@ Rule 11
 
 Interview Question Integration Rule
 
-If the input contains interview questions (from text, PDF, DOCX, Markdown, or any other format), or if the input is an existing Markdown notes file that includes interview questions:
+If the input contains interview questions (from text, PDF, DOCX, Markdown, or any other format), or if the input is an existing Markdown file that includes interview questions:
 
 Analyze each question individually.
 Identify the underlying concept or technology being tested (not just the wording of the question).
