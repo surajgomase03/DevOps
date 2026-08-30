@@ -286,21 +286,59 @@ A few security/governance-critical resources didn't make the original "top 25 co
 
 Building this stack step by step, here's what depends on what and why — this is the order Terraform needs things to exist in (mostly inferred automatically from resource references, with one explicit exception noted below).
 
-| Resource | Depends On | Why (what breaks if the dependency is missing) | Creation order |
-|---|---|---|---|
-| `aws_vpc` | — (nothing) | This is the root — everything else lives inside it | 1 |
-| `aws_internet_gateway` | `aws_vpc` | An IGW must be attached to a specific VPC; can't exist standalone | 2 |
-| `aws_subnet` (public) | `aws_vpc` | Every subnet needs a parent VPC and a CIDR that fits inside the VPC's CIDR | 2 |
-| `aws_subnet` (private) | `aws_vpc` | Same as above | 2 |
-| `aws_route_table` (public) | `aws_vpc` | A route table is scoped to one VPC | 3 |
-| `aws_route_table` (private) | `aws_vpc` | Same | 3 |
-| `aws_route` (public → IGW) | `aws_route_table` (public) **+** `aws_internet_gateway` | Needs a route table to add the rule into, and an IGW to point the rule at — if the IGW isn't created first, this fails | 4 |
-| `aws_eip` (for NAT) | — (needs `domain = "vpc"` only) | Independent resource, but functionally useless until attached to a NAT Gateway | 2 (can be parallel) |
-| `aws_nat_gateway` | `aws_subnet` (public) **+** `aws_eip` **+** `aws_internet_gateway` (via explicit `depends_on`) | NAT must sit inside an already-existing public subnet, needs an EIP to attach, and needs the IGW to exist first — this is why the code has an explicit `depends_on`, since Terraform can't always infer it from arguments alone | 5 |
-| `aws_route` (private → NAT) | `aws_route_table` (private) **+** `aws_nat_gateway` | Needs the NAT Gateway to already exist as a target — this is the resource most likely to fail on first `apply` if NAT isn't fully provisioned yet | 6 |
-| `aws_route_table_association` (public) | `aws_subnet` (public) **+** `aws_route_table` (public) | Links the two — without this, the subnet silently falls back to the VPC's main route table | 4 (can run parallel to step 4 route) |
-| `aws_route_table_association` (private) | `aws_subnet` (private) **+** `aws_route_table` (private) | Same risk — forgetting this is the #1 cause of "why can't my private EC2 reach the internet even though I made a NAT Gateway" | 6 (after NAT route exists) |
+| Resource | Depends On | Why (what breaks if the dependency is missing) | Order | Production-level code example |
+|---|---|---|---|---|
+| `aws_vpc` | — (nothing) | Root resource — everything else lives inside it | 1 | `resource "aws_vpc" "main" {`<br>`  cidr_block           = "10.0.0.0/16"`<br>`  enable_dns_support   = true`<br>`  enable_dns_hostnames = true`<br>`  tags = {`<br>`    Name        = "prod-vpc"`<br>`    Environment = "production"`<br>`    ManagedBy   = "terraform"`<br>`  }`<br>`}` |
+| `aws_internet_gateway` | `aws_vpc` | Must attach to a specific VPC; can't exist standalone | 2 | `resource "aws_internet_gateway" "main" {`<br>`  vpc_id = aws_vpc.main.id`<br>`  tags = { Name = "prod-igw", Environment = "production" }`<br>`}` |
+| `aws_subnet` (public, per AZ) | `aws_vpc` | Needs a parent VPC and a CIDR that fits inside it — prod uses **one per AZ**, not one flat subnet | 2 | `resource "aws_subnet" "public" {`<br>`  for_each = { a = "10.0.1.0/24", b = "10.0.2.0/24" }`<br>`  vpc_id                  = aws_vpc.main.id`<br>`  cidr_block              = each.value`<br>`  availability_zone        = "ap-south-1${each.key}"`<br>`  map_public_ip_on_launch  = true`<br>`  tags = { Name = "prod-public-${each.key}", Tier = "public" }`<br>`}` |
+| `aws_subnet` (private, per AZ) | `aws_vpc` | Same, plus keeps `map_public_ip_on_launch` explicitly false | 2 | `resource "aws_subnet" "private" {`<br>`  for_each = { a = "10.0.11.0/24", b = "10.0.12.0/24" }`<br>`  vpc_id                  = aws_vpc.main.id`<br>`  cidr_block              = each.value`<br>`  availability_zone        = "ap-south-1${each.key}"`<br>`  map_public_ip_on_launch  = false`<br>`  tags = { Name = "prod-private-${each.key}", Tier = "private" }`<br>`}` |
+| `aws_route_table` (public) | `aws_vpc` | Route table is scoped to one VPC | 3 | `resource "aws_route_table" "public" {`<br>`  vpc_id = aws_vpc.main.id`<br>`  tags = { Name = "prod-public-rt" }`<br>`}` |
+| `aws_route_table` (private, per AZ) | `aws_vpc` | Prod uses **one private RT per AZ** so each AZ's NAT Gateway only serves its own AZ — keeps traffic from crossing AZs and paying cross-AZ NAT data charges | 3 | `resource "aws_route_table" "private" {`<br>`  for_each = aws_subnet.private`<br>`  vpc_id   = aws_vpc.main.id`<br>`  tags = { Name = "prod-private-rt-${each.key}" }`<br>`}` |
+| `aws_route` (public → IGW) | `aws_route_table` (public) **+** `aws_internet_gateway` | Needs the route table to add the rule into, and the IGW to point at | 4 | `resource "aws_route" "public_internet" {`<br>`  route_table_id         = aws_route_table.public.id`<br>`  destination_cidr_block = "0.0.0.0/0"`<br>`  gateway_id              = aws_internet_gateway.main.id`<br>`}` |
+| `aws_eip` (per AZ NAT) | — (`domain = "vpc"` only) | Independent, but useless until attached to a NAT Gateway | 2 (parallel) | `resource "aws_eip" "nat" {`<br>`  for_each = aws_subnet.public`<br>`  domain   = "vpc"`<br>`  tags = { Name = "prod-nat-eip-${each.key}" }`<br>`}` |
+| `aws_nat_gateway` (per AZ) | `aws_subnet` (public) **+** `aws_eip` **+** `aws_internet_gateway` (explicit `depends_on`) | Prod runs **one NAT Gateway per AZ** — a single shared NAT is a single point of failure for every private subnet | 5 | `resource "aws_nat_gateway" "main" {`<br>`  for_each      = aws_subnet.public`<br>`  allocation_id = aws_eip.nat[each.key].id`<br>`  subnet_id     = each.value.id`<br>`  tags = { Name = "prod-nat-${each.key}" }`<br>`  depends_on = [aws_internet_gateway.main]`<br>`}` |
+| `aws_route` (private → NAT, per AZ) | `aws_route_table` (private) **+** `aws_nat_gateway` | Each AZ's private RT points to **its own AZ's** NAT Gateway, not a shared one | 6 | `resource "aws_route" "private_internet" {`<br>`  for_each                = aws_route_table.private`<br>`  route_table_id          = each.value.id`<br>`  destination_cidr_block  = "0.0.0.0/0"`<br>`  nat_gateway_id           = aws_nat_gateway.main[each.key].id`<br>`}` |
+| `aws_route_table_association` (public) | `aws_subnet` (public) **+** `aws_route_table` (public) | Without this the subnet silently falls back to the VPC's main route table | 4 (parallel) | `resource "aws_route_table_association" "public" {`<br>`  for_each       = aws_subnet.public`<br>`  subnet_id      = each.value.id`<br>`  route_table_id = aws_route_table.public.id`<br>`}` |
+| `aws_route_table_association` (private, per AZ) | `aws_subnet` (private) **+** `aws_route_table` (private) | Forgetting this is the #1 cause of "NAT exists but private EC2 still can't reach the internet" | 6 | `resource "aws_route_table_association" "private" {`<br>`  for_each       = aws_subnet.private`<br>`  subnet_id      = each.value.id`<br>`  route_table_id = aws_route_table.private[each.key].id`<br>`}` |
 
 **The one dependency that trips people up most:** `aws_nat_gateway` → `aws_subnet` (public), not `aws_subnet` (private). NAT lives *in* the public subnet and is *referenced by* the private route table — it's easy to mentally place it in the private subnet since that's who uses it.
 
 Terraform resolves most of this automatically from resource references (e.g. `subnet_id = aws_subnet.public.id` creates an implicit dependency) — the only place you need an *explicit* `depends_on` is NAT Gateway → Internet Gateway, since NAT doesn't directly reference the IGW in any argument, so Terraform has no way to infer that ordering on its own.
+
+---
+
+## Final Clean Cheat Sheet — One Page, No Fluff
+
+If you forget every table above, remember this page.
+
+### The framework (say this out loud in an interview)
+> "For every resource I check: **E**ncryption, **N**etwork exposure, **H**igh availability, **D**eletion safety, **L**ogging, **I**AM least privilege."
+
+### VPC networking build order (always in this sequence)
+```
+VPC → IGW → Subnets (public+private, per AZ) → Route Tables (per AZ) 
+    → Public route (RT → IGW) → EIP → NAT Gateway (per AZ, in public subnet)
+    → Private route (RT → NAT) → Route Table Associations
+```
+One-liner: **"Subnet is public only because its route table points 0.0.0.0/0 at an IGW — nothing else makes it public."**
+
+### The 10 flags that fail an audit if missing (memorize these verbatim)
+| # | Resource | Flag | One-line reason |
+|---|---|---|---|
+| 1 | EC2 / Launch Template | `metadata_options.http_tokens = "required"` | Blocks SSRF → credential theft (IMDSv2) |
+| 2 | S3 | 4x `public_access_block` flags = true | Stops the "leaky bucket" breach class |
+| 3 | RDS | `storage_encrypted` + `deletion_protection` | Encrypted at rest, can't be fat-fingered away |
+| 4 | RDS / EC2 / DynamoDB | `publicly_accessible` / `assign_public_ip` = false | No accidental internet exposure |
+| 5 | EBS / RDS / S3 / DynamoDB | `encrypted` / `storage_encrypted` / SSE = true | Data at rest is always encrypted |
+| 6 | ALB | `enable_deletion_protection` + `drop_invalid_header_fields` | No accidental delete, no desync attacks |
+| 7 | SG | `create_before_destroy` + no `0.0.0.0/0` ingress | No downtime on replace, no open doors |
+| 8 | KMS | `enable_key_rotation` | Free, automatic blast-radius reduction |
+| 9 | CloudWatch Logs | `retention_in_days` set | Stops silent infinite log cost |
+| 10 | IAM | No `Action:*` + `Resource:*` together | No accidental full-account access |
+
+### Must vs Should — the one rule that covers 90% of cases
+- **Must** = security/data-loss risk if skipped → non-negotiable in every environment.
+- **Should** = availability/cost tradeoff (multi-AZ, WAF, performance insights) → prod says yes, dev/staging often says no on purpose to save cost.
+
+### The single sentence to end an interview answer with
+> "I treat encryption, public exposure, and deletion protection as non-negotiable everywhere — multi-AZ, WAF, and enhanced logging I scale up or down based on environment and cost."
