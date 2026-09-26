@@ -6,12 +6,21 @@
 
 ## Changelog
 
-**Version 1 | July 2026**
+**Version 1 | July 2026 | Batch 2 (Interview Question Integration)**
+
+- **Source:** 150+ uploaded interview questions (Core Ansible, Playbooks, Variables/Facts, Roles, Templates, Handlers, Vault, Dynamic Inventory, SSH/Connectivity, Privilege Escalation, Error Handling, Performance, Windows Automation, CI/CD, Real-World Troubleshooting, Senior/Architecture).
+- **Processed per the Interview Question Integration Rule:** each question mapped to its underlying concept, checked against existing Batch 1 content, then either merged into the existing section (full section regenerated, not appended) or added as new.
+- **Existing sections updated (concept merged in, full section regenerated):** Section 2 (control/managed node definitions, connection variables, privilege escalation/`become` vs `sudo`), Section 6 (`command` vs `shell`, `file` vs `copy`, check/diff mode, `--start-at-task`), Section 9 (`set_fact` vs `register`, concrete fact-caching config), Section 13 (`failed_when`, `changed_when`, `until`/`retries`/`delay`, `any_errors_fatal`), Section 15 (`include_role` vs `import_role`), Section 17 (`--ask-vault-pass` vs `--vault-password-file`, Vault decryption troubleshooting), Section 24 (rollback strategy, "works manually but fails in Jenkins"), Section 25 (7 new troubleshooting scenarios: module not found, Python bootstrap, package version drift, mid-deploy failure resilience, config-not-applied, cron execution failures, disk-space failure, segfault, single-host connectivity).
+- **Completely new sections added:** Section 31 (Windows Automation / WinRM), Section 32 (Testing with Molecule, code review/quality gates, enterprise-scale architecture for 1,000+ servers). Cheat Sheet renumbered 31 → 33 to accommodate.
+- **Duplicates skipped (already fully covered in Batch 1, not re-added):** agentless architecture, push vs pull, SSH communication basics, static/dynamic inventory, ad-hoc commands, playbook/YAML basics, modules/collections/Galaxy, variable types/precedence, facts/fact gathering basics, conditionals/loops, tags, handlers (core behavior), block/rescue/always (core behavior), includes vs imports (task-level), role directory structure/dependencies, Jinja2/filters/lookups, Vault basics/Vault IDs, async/polling, delegation/local actions/run_once, serial/rolling updates/strategies/forks, callbacks/plugins/custom modules, shell integration/package/user/service/cron/firewall/SELinux/systemd, Docker/Kubernetes/AWS/Azure/GCP/VMware automation, Jenkins/GitHub Actions/GitLab CI basics, Terraform integration, general logging/debugging, UNREACHABLE/idempotency-drift/undefined-variable/hanging-playbook troubleshooting, best practices/security/project structure, blue-green/canary/rolling/zero-downtime deployment, common errors/mistakes/interview traps, 50 production scenarios, all prior interview question banks.
+- **Processing summary:** 150 questions processed → 2 new concept sections added (Windows Automation; Testing/Enterprise Architecture) → 9 existing sections updated with merged content → ~55 questions skipped as duplicates of Batch 1 concepts → 11 handbook sections modified in total (2, 6, 9, 13, 15, 17, 24, 25, 31 [new], 32 [new], 33 [renumbered/enriched]).
+
+**Version 1 | July 2026 | Batch 1 (Baseline)**
 
 - **Status:** Baseline handbook — first version, no prior handbook to diff against.
-- **Added:** All 31 consolidated sections (mapping the full 102-topic Ansible syllabus) — Introduction & Architecture through Cheat Sheet & One-Page Revision. See Table of Contents below.
-- **Format note:** This version is intentionally condensed/pointwise across all topics to stay usable as a single file. Deeper 12-subsection treatment (Internal Working, Security, Monitoring, Troubleshooting, FAQs, etc., individually) has NOT yet been applied topic-by-topic — flag specific topics you want expanded and they'll be fully rewritten (not just appended to) in v2, per the versioning rules.
-- **Next handbook:** `Ansible-Handbook-2026-08-v2.md` — will contain only new/updated/improved topics, cross-referencing this file for anything already fully covered here.
+- **Added:** All 31 consolidated sections (mapping the full 102-topic Ansible syllabus) — Introduction & Architecture through Cheat Sheet & One-Page Revision.
+- **Format note:** Intentionally condensed/pointwise across all topics to stay usable as a single file.
+- **Next handbook:** `Ansible-Handbook-2026-08-v2.md` — created only when the month rolls over or you explicitly say "go with version 2."
 
 ---
 
@@ -47,7 +56,9 @@
 28. [Common Errors, Mistakes, Interview Traps](#28-common-errors-mistakes-interview-traps)
 29. [50 Production Scenarios](#29-50-production-scenarios)
 30. [Interview Question Bank](#30-interview-question-bank)
-31. [Cheat Sheet & One-Page Revision](#31-cheat-sheet--one-page-revision)
+31. [Windows Automation (WinRM)](#31-windows-automation-winrm)
+32. [Testing, Code Quality & Enterprise-Scale Architecture](#32-testing-code-quality--enterprise-scale-architecture)
+33. [Cheat Sheet & One-Page Revision](#33-cheat-sheet--one-page-revision)
 
 ---
 
@@ -151,6 +162,55 @@ sequenceDiagram
 ```
 
 **Interview trap:** People often think Ansible "runs commands remotely one by one." In reality, it **copies and executes a script**, then reads back structured JSON — this is why Ansible can report a clean "changed: true/false" rather than just raw command output.
+
+### Control Node and Managed Node (Precise Definitions)
+
+- **Control node:** The machine where you install Ansible and run `ansible-playbook`/`ansible` commands from. Only Linux/macOS/WSL can be a control node — Windows cannot (as of current Ansible versions).
+- **Managed node:** Any server Ansible connects to and configures. Managed nodes need **no Ansible installed at all** — just SSH (or WinRM for Windows) and, for most modules, Python.
+- **Why this distinction matters in interviews:** A common trap question is "can a managed node also be a control node?" — yes, nothing stops a server from being both, but architecturally they're different roles: the control node initiates and orchestrates, managed nodes just execute what's sent to them.
+
+### Key Connection Variables
+
+These control exactly how Ansible reaches a specific host — normally set per-host/group in inventory or `group_vars`/`host_vars`.
+
+| Variable | Purpose | Example |
+|---|---|---|
+| `ansible_host` | The real IP/hostname to connect to (when different from the inventory name) | `ansible_host: 10.0.1.10` |
+| `ansible_port` | Custom SSH port, when a server doesn't use the default port 22 | `ansible_port: 2222` |
+| `ansible_user` | The SSH username to connect as | `ansible_user: deploy` |
+| `ansible_connection` | Which connection plugin to use — `ssh` (default, Linux), `winrm` (Windows), `local` (run on the control node itself), `docker` (exec into a container) | `ansible_connection: winrm` |
+| `ansible_ssh_private_key_file` | Path to a specific SSH private key for this host/group | `ansible_ssh_private_key_file: ~/.ssh/cmg_deploy_key` |
+| `ansible_ssh_common_args` | Extra raw SSH arguments, e.g. to disable host key checking for one group only | `ansible_ssh_common_args: '-o StrictHostKeyChecking=no'` |
+
+### Privilege Escalation (`become`)
+
+- **What it is:** The mechanism for running a task as a different user (almost always root) than the one you connected via SSH as — needed because you typically SSH in as an unprivileged deploy user, then need root to install packages/manage services.
+- **`become: true`** at the play or task level tells Ansible to escalate privileges for that scope.
+- **`become` vs `sudo` directly:** `become` is Ansible's abstraction over privilege escalation — it can use `sudo`, `su`, `pbrun`, `doas`, or other methods depending on `become_method`; `sudo` is just one specific implementation. Using `become` (not hardcoding `sudo` in a shell command) keeps playbooks portable across systems that use different escalation tools.
+
+```yaml
+- hosts: webservers
+  become: true            # escalate privileges for every task in this play
+  become_user: root       # (default) which user to escalate TO
+  become_method: sudo     # (default) HOW to escalate — sudo, su, etc.
+  tasks:
+    - name: Install a package (needs root)
+      apt:
+        name: nginx
+        state: present
+```
+
+**Configuring passwordless sudo for Ansible (so `become` doesn't hang waiting for a password prompt):**
+```bash
+# On the managed node, in /etc/sudoers.d/deploy (edit via visudo -f, never by hand directly)
+deploy ALL=(ALL) NOPASSWD: ALL
+```
+- Without this, `become: true` will hang or fail unless you also pass `--ask-become-pass` and type the sudo password interactively — impractical for automated CI/CD runs.
+
+**Troubleshooting sudo/`become` permission issues:**
+- Symptom: `"module_stdout": "sudo: a password is required"`.
+- Root Cause: The `deploy` user needs a sudo password, and neither passwordless sudo nor `--ask-become-pass` was configured.
+- Fix: Either configure passwordless sudo (above) for automation, or pass `--ask-become-pass` for interactive runs, or use Ansible Vault to store the become password securely for CI/CD (`ansible_become_password` sourced from a vault-encrypted variable).
 
 ### Interview Questions (Section 2)
 
@@ -417,11 +477,63 @@ ansible-playbook -i inventory.ini site.yml --limit webservers   # restrict to on
 ansible-playbook -i inventory.ini site.yml --tags "nginx"        # run only tasks tagged 'nginx'
 ```
 
+### `command` vs `shell` — What's Actually Different
+
+| Aspect | `command` | `shell` |
+|---|---|---|
+| Runs through a shell? | No — runs the binary directly | Yes — runs through `/bin/sh`, so shell features work |
+| Supports pipes (`\|`), redirects (`>`), env vars (`$HOME`)? | No | Yes |
+| Safer against injection? | Yes (no shell interpretation of special characters) | Riskier if the command includes untrusted input |
+| When to use | Simple, single-binary commands with no shell features needed | Only when you genuinely need pipes/redirects/shell logic AND no dedicated module exists |
+
+```yaml
+- name: This works with 'command' — no shell features needed
+  command: /usr/bin/systemctl status nginx
+
+- name: This NEEDS 'shell' — uses a pipe
+  shell: ps aux | grep nginx | wc -l
+```
+
+### `file` vs `copy` — What's Actually Different
+
+- **`file`**: Manages metadata/existence of files and directories — permissions, ownership, symlinks, creating an empty directory, or deleting a file. It does NOT put content into a file from the control node.
+- **`copy`**: Transfers actual file content from the control node (or an inline string) to the target. Also manages basic permissions as a side effect, but its primary job is moving content.
+
+```yaml
+- name: Just ensure a directory exists with the right owner (no content involved)
+  file:
+    path: /opt/myapp/logs
+    state: directory
+    owner: appuser
+
+- name: Actually copy real file content to the target
+  copy:
+    src: myapp.conf
+    dest: /etc/myapp/myapp.conf
+```
+
+### Check Mode and Diff Mode
+
+- **Check mode (`--check`):** Simulates the run — reports what WOULD change without actually changing anything on the target. Most modules support it; a few (mainly ones calling external scripts via `command`/`shell`) can't meaningfully simulate and will just report "skipped" in check mode unless they declare `check_mode: false`... support explicitly.
+- **Diff mode (`--diff`):** Shows the actual before/after content difference for file-based changes (like a `git diff`) — usually combined with `--check` for the clearest possible pre-production review: `ansible-playbook site.yml --check --diff`.
+
+### Validating and Scoping a Playbook Run
+
+```bash
+ansible-playbook site.yml --syntax-check         # confirms YAML/playbook structure is valid, touches nothing
+ansible-playbook site.yml --check --diff          # dry run + shows exact before/after diffs
+ansible-playbook site.yml --limit webservers       # run only against one inventory group/host
+ansible-playbook site.yml --tags "nginx"           # run only tasks tagged 'nginx' (see Section 11)
+ansible-playbook site.yml --start-at-task="Restart nginx"   # resume from a specific task by name, skipping everything before it
+ansible-playbook site.yml --step                   # interactively confirm (y/n) before each task runs — useful for cautious manual debugging
+```
+
 ### Common Mistakes
 
 - Using tabs instead of spaces in YAML (instant parse error).
 - Forgetting `become: true` and having tasks silently fail due to permission errors.
 - Writing tasks that are not idempotent (e.g. `shell: echo "config" >> file.conf` — this appends every single run, growing the file forever, instead of using the `lineinfile` or `template` module).
+- Using `shell` by default "just in case" instead of `command`, unnecessarily exposing the task to shell-injection risk when the input isn't fully trusted.
 
 ### Interview Questions (Section 6)
 
@@ -429,6 +541,10 @@ ansible-playbook -i inventory.ini site.yml --tags "nginx"        # run only task
   A: Using proper modules (not raw shell appends) so re-running the playbook produces the same end state without duplicating or corrupting changes — critical because playbooks are re-run regularly, not just once.
 - Q: What does `--check` do and why is it useful before a production run?
   A: It performs a dry run, showing what changes WOULD be made without actually making them — lets you review the blast radius of a change before committing to it.
+- Q: What's the difference between `command` and `shell`, and which should you default to?
+  A: `command` runs the binary directly with no shell interpretation (safer, no pipes/redirects); `shell` runs through `/bin/sh` and supports pipes/redirects/env vars. Default to `command` unless you specifically need shell features.
+- Q: How would you resume a failed playbook from a specific task instead of re-running everything?
+  A: Use `--start-at-task="<task name>"` to skip straight to that task, combined with `--limit` if only some hosts need it.
 
 ---
 
@@ -599,6 +715,40 @@ Capture the result of a task so a later task can use it (e.g. check the output, 
     dest: /etc/myapp/config.yml
   when: not config_check.stat.exists
 ```
+
+### `set_fact` vs `register` — What's Actually Different
+
+Both create a variable from within a running play, but for different purposes:
+
+| | `register` | `set_fact` |
+|---|---|---|
+| Source of the value | Captures the **result of a task** (its return data) | Sets a variable to **any value you compute/choose** |
+| Typical use | "What did this task's output say?" | "Define a derived value for later tasks to use" |
+| Scope | Available to later tasks in the same play (like any variable) | Same, but can also be marked persistent across a whole run with `cacheable: true` if fact caching is enabled |
+
+```yaml
+- name: Capture a task's actual result
+  command: cat /etc/myapp/version.txt
+  register: version_output
+
+- name: Derive a computed variable from it
+  set_fact:
+    app_major_version: "{{ version_output.stdout.split('.')[0] }}"
+```
+
+### Fact Caching (Concrete Configuration)
+
+By default, facts are re-gathered on every single `ansible-playbook` run — costing a few seconds per host. Fact caching stores gathered facts (e.g. in Redis or a local JSON file) so a later run can reuse them instead of re-gathering, if they're still fresh.
+
+```ini
+# ansible.cfg
+[defaults]
+gathering = smart                      # only gather facts if they're not already cached and fresh
+fact_caching = jsonfile                # or 'redis' for a shared cache across multiple control nodes
+fact_caching_connection = /tmp/ansible_fact_cache
+fact_caching_timeout = 86400            # cache facts for 24 hours before re-gathering
+```
+**Real production use case:** A Jenkins pipeline running many playbooks back-to-back against the same fleet within a short window uses `redis` fact caching so the 2nd, 3rd, 4th playbook run in that window skip re-gathering facts entirely, cutting total pipeline time noticeably.
 
 ### Magic Variables
 
@@ -840,10 +990,55 @@ flowchart TD
 ```
 **Difference from `block/rescue`:** `ignore_errors` just swallows the failure and moves on — it gives you no chance to actually recover or run cleanup logic. Use `block/rescue/always` for anything where you actually need to react to the failure.
 
+### Custom Failure/Change Definitions: `failed_when` and `changed_when`
+
+By default, Ansible decides success/failure from a command's exit code, and "changed" from whether the module reports it changed something. Sometimes you need to override this logic yourself.
+
+```yaml
+- name: A command that exits 0 even on a logical failure
+  command: /opt/scripts/check_replication.sh
+  register: repl_check
+  failed_when: "'ERROR' in repl_check.stdout"    # treat as failed if this text appears, regardless of exit code
+  changed_when: false                              # this is a read-only check — never report "changed"
+```
+- **`failed_when`**: Overrides what counts as a failure — critical for wrapping legacy scripts that don't use proper exit codes.
+- **`changed_when`**: Overrides what counts as a change — critical for keeping `command`/`shell` tasks honest in `--check`/`--diff` output (a read-only check should never show as "changed").
+
+### Retrying a Task: `until`, `retries`, `delay`
+
+For a task that might need a few attempts before succeeding (e.g. waiting for a service to become healthy after a restart):
+
+```yaml
+- name: Wait for the app to report healthy, retrying if not
+  uri:
+    url: "http://{{ inventory_hostname }}:8080/health"
+    status_code: 200
+  register: health_result
+  until: health_result.status == 200
+  retries: 5        # try up to 5 times
+  delay: 10          # wait 10 seconds between attempts
+```
+- This is the general-purpose retry pattern — not limited to `async_status` (see Section 18), it works on any task.
+
+### `any_errors_fatal`
+
+Normally, if a task fails on one host, Ansible just removes that host from the rest of the play and keeps going on the others. `any_errors_fatal: true` changes this — a single host's failure immediately aborts the ENTIRE play for ALL hosts, not just the failed one.
+
+```yaml
+- hosts: webservers
+  any_errors_fatal: true    # one host failing stops the whole play immediately for everyone
+  tasks:
+    - name: Critical pre-check that must pass everywhere before proceeding
+      command: /opt/scripts/precheck.sh
+```
+**When to use it:** For a task where partial success is actually WORSE than total failure — e.g. a pre-check that must pass on every server before any of them proceed to an actual risky change.
+
 ### Common Mistakes
 
 - Overusing `ignore_errors: true` to silence real failures instead of properly handling them — this hides genuine production problems.
 - Forgetting that a failed host is, by default, removed from the rest of the play (unless handled) — later tasks simply skip that host silently.
+- Forgetting `changed_when: false` on read-only diagnostic commands, causing them to always show as "changed" and clutter `--diff` output.
+- Using `any_errors_fatal` too broadly, turning every minor per-host hiccup into a total playbook abort.
 
 ### Interview Questions (Section 13)
 
@@ -851,6 +1046,10 @@ flowchart TD
   A: `ignore_errors` just suppresses the failure with no recovery logic; `block/rescue` lets you define an actual recovery path (e.g. restore from backup) when something fails.
 - Q: When does the `always` section run?
   A: Always — regardless of whether the block succeeded, failed, or was rescued. Good for cleanup/notifications.
+- Q: Why would you set `changed_when: false` on a `command` task?
+  A: Because it's a read-only check — without this, Ansible would report it as "changed" every run (since `command`/`shell` always default to "changed" on success), cluttering diffs and breaking idempotent reporting.
+- Q: What's the difference between a normal task failure and `any_errors_fatal: true`?
+  A: Normally a failed host is just dropped from the rest of the play while others continue; `any_errors_fatal` aborts the whole play for every host the moment any single host fails.
 
 ---
 
@@ -945,10 +1144,27 @@ CMG-style enterprise setup: a `common` role (security hardening, user management
 | Easy to share via Ansible Galaxy | Can become over-engineered for simple use cases |
 | Clear separation of concerns | Debugging a deep role-dependency chain can be harder to trace |
 
+### `include_role` vs `import_role` (Same Static/Dynamic Split as Section 14)
+
+Exactly the same static-vs-dynamic distinction as `import_tasks` vs `include_tasks` (Section 14), applied to whole roles:
+
+```yaml
+tasks:
+  - import_role:                       # static — resolved before the play starts, role name must be fixed
+      name: common
+
+  - include_role:                       # dynamic — resolved at run time, can use a variable
+      name: "{{ os_family_role }}"
+    when: needs_os_specific_setup
+```
+- Use `import_role` for roles that should always run (visible to `--list-tasks`/tags ahead of time).
+- Use `include_role` when the role to run depends on a runtime variable/condition — e.g. picking `RedHat_hardening` vs `Debian_hardening` based on a fact gathered at run time.
+
 ### Common Mistakes
 
 - Not using `defaults/main.yml` for overridable settings, hardcoding values in `tasks/main.yml` instead.
 - Circular role dependencies (Role A depends on Role B which depends on Role A).
+- Trying to use a runtime variable in `import_role`'s `name`, not realizing it needs `include_role` for that (same trap as `import_tasks`).
 
 ### Interview Questions (Section 15)
 
@@ -956,6 +1172,8 @@ CMG-style enterprise setup: a `common` role (security hardening, user management
   A: `defaults` are low-priority, meant to be overridden by whoever uses the role; `vars` are high-priority, set by the role author for values the role's internal logic depends on.
 - Q: How do you make one role automatically pull in another role it depends on?
   A: Declare it under `dependencies` in that role's `meta/main.yml`.
+- Q: What's the difference between `include_role` and `import_role`?
+  A: Same static-vs-dynamic split as `import_tasks`/`include_tasks` — `import_role` is resolved at parse time (no runtime variables in the role name), `include_role` is resolved at run time and supports a variable role name.
 
 ---
 
@@ -1081,10 +1299,27 @@ db_password: !vault |
   66386439653236336462626566653...
 ```
 
+### `--ask-vault-pass` vs `--vault-password-file`
+
+| | `--ask-vault-pass` | `--vault-password-file` |
+|---|---|---|
+| How the password is provided | Typed interactively at a prompt | Read from a file (or a script that outputs it) |
+| Fits automation/CI/CD? | No — blocks waiting for human input | Yes — this is the standard for pipelines |
+| Common real use | A human engineer running a playbook manually on their laptop | Jenkins/GitHub Actions/GitLab CI, where a secrets manager writes the password to a temp file first |
+
+### Troubleshooting a Vault Decryption Error
+
+- Symptoms: `ERROR! Decryption failed` or `Attempting to decrypt but no vault secrets found`.
+- Root Cause (ranked): Wrong vault password/vault-id supplied; file was encrypted with a different vault-id than the one provided at runtime; file isn't actually vault-encrypted (missing the `$ANSIBLE_VAULT` header) but is being treated as if it is.
+- Investigation Steps: Check the file's first line for `$ANSIBLE_VAULT;1.1;AES256` (or similar) to confirm it's genuinely vault-encrypted; confirm which vault-id label was used to encrypt it (`ansible-vault view --vault-id <label>@prompt file.yml`).
+- Resolution: Supply the correct password/vault-id combination; if the password is genuinely lost, the file cannot be recovered — this is why vault passwords must live in a recoverable secrets manager, never only in one person's memory.
+- Prevention: Always store vault passwords in a secrets manager (never only locally), and label vault-ids clearly per environment so the correct one is obvious at decrypt time.
+
 ### Common Mistakes
 
 - Storing the vault password in the same Git repo as the encrypted files — defeats the entire purpose.
 - Using one shared vault password across dev/stage/prod, meaning anyone with dev access can decrypt production secrets too.
+- Losing track of which Vault ID encrypted a given file, causing confusing decryption failures that look like a wrong password but are actually a wrong vault-id.
 
 ### Interview Questions (Section 17)
 
@@ -1092,6 +1327,8 @@ db_password: !vault |
   A: Store the vault password in a secrets manager, have Jenkins fetch it at runtime into a temporary file, pass that file via `--vault-password-file`, and ensure it's deleted after the run — never hardcode it in the pipeline script.
 - Q: Why would you use multiple Vault IDs instead of one shared password?
   A: To isolate blast radius — a leaked dev password shouldn't also expose production secrets; each environment/team can have its own vault password.
+- Q: A playbook throws a Vault decryption error — what's your investigation order?
+  A: Confirm the file is genuinely vault-encrypted (check the header), confirm which vault-id encrypted it, then confirm the correct matching password/vault-id is being supplied at runtime.
 
 ---
 
@@ -1723,15 +1960,37 @@ resource "aws_instance" "app" {
 ```
 **Better real-world pattern than inline provisioners:** Terraform outputs the new instance's IP to a dynamic inventory file (or Ansible just uses `ec2_sd`-style dynamic inventory directly), and a separate Jenkins stage runs Ansible afterward — keeping provisioning (Terraform) and configuration (Ansible) as cleanly separated pipeline stages, easier to retry independently.
 
+### Rollback Strategy in an Ansible-Based Pipeline
+
+Ansible has no built-in "undo" — rollback has to be designed deliberately:
+
+- **Version-tagged playbooks:** Every deploy runs from a specific Git tag/commit. Rollback = re-run the pipeline pointed at the PREVIOUS tag's playbook/app version variable, not a special "rollback mode."
+- **Application-level rollback:** For app deploys, keep the previous release artifact/container image available and have the playbook accept an `app_version` variable — rollback is just re-running with `-e app_version=<previous>`.
+- **Database migrations are the hard part:** Code rollback is easy (redeploy old version); a destructive DB migration often isn't reversible — this is why the `block/rescue` backup-before-migrate pattern (Section 13/29) matters, so `rescue` can restore from the pre-migration backup if needed.
+- **Load-balancer-aware rollback:** Combine with `serial` + `delegate_to` (Section 20) so a rollback rolls out exactly like a forward deploy — batch by batch, with health checks — rather than a risky big-bang revert.
+
+### Troubleshooting: "Works Manually But Fails in Jenkins/CI"
+
+- Symptoms: Running `ansible-playbook site.yml` by hand from your own terminal succeeds; the exact same playbook run through Jenkins fails.
+- Root Cause (ranked): Different `PATH`/Python interpreter available to the Jenkins agent's user vs your interactive shell; the Jenkins agent's SSH key/known_hosts isn't set up the same as your personal one; environment variables (like `ANSIBLE_CONFIG`) your shell has that Jenkins doesn't; Jenkins agent running as a different OS user with different `~/.ssh` contents.
+- Investigation Steps: Run `ansible-playbook site.yml -vvv` from within the Jenkins job itself (not just locally) to see the actual environment/connection details Jenkins is using; compare `which python3` and `env` output between your shell and a debug `sh 'env'` step in the Jenkins pipeline.
+- Resolution: Explicitly set `ansible_python_interpreter` if Jenkins's default differs from what you assumed; ensure the Jenkins agent has its own valid SSH key registered on target hosts (via Jenkins Credentials, not copied from a human's key); pin `ANSIBLE_CONFIG`/inventory paths explicitly in the pipeline rather than relying on the current working directory.
+- Prevention: Keep the Jenkins agent's environment as close as possible to a clean, documented baseline (e.g. a dedicated Docker image for the Ansible pipeline stage) rather than an ad-hoc shared build agent that "happens to work."
+
 ### Common Mistakes
 
 - Running Ansible directly from a developer's laptop against production instead of through a controlled, audited CI/CD pipeline.
 - Not running `--check --diff` before a real production deploy, skipping the chance to review blast radius.
+- Having no defined rollback path until the moment a bad deploy actually happens.
 
 ### Interview Questions (Section 24)
 
 - Q: Why separate Terraform's `local-exec` provisioner pattern from a dedicated Ansible pipeline stage in practice?
   A: Inline provisioners couple provisioning and configuration tightly, making retries and independent debugging harder; a separate pipeline stage lets you re-run just the configuration step without recreating infrastructure.
+- Q: How do you implement rollback in an Ansible-based deployment pipeline?
+  A: Design for it upfront — version-tagged playbooks/artifacts so rollback is just re-running with the previous version variable, `block/rescue` with pre-change backups for anything destructive (like DB migrations), and rolling the rollback out via the same `serial`+health-check pattern as a forward deploy.
+- Q: A playbook works when you run it manually but fails inside Jenkins — what's your first move?
+  A: Run it with `-vvv` from inside the actual Jenkins job (not just locally) and compare the Python interpreter, PATH, and SSH key/environment Jenkins is actually using against your own shell — the failure is almost always an environment difference, not the playbook itself.
 
 ---
 
@@ -1789,12 +2048,83 @@ ansible-playbook site.yml -vvvv   # includes connection plugin debugging (very d
 - Resolution: Add the correct non-interactive flag to the underlying command (e.g. `DEBIAN_FRONTEND=noninteractive` for apt), or use the proper module instead of raw shell.
 - Prevention: Avoid raw shell commands that can prompt interactively; always test new tasks against a single host first.
 
+**Issue: "Ansible cannot connect to one server, while all other servers work"**
+- Symptoms: `ansible all -m ping` succeeds on every host except one.
+- Root Cause: That specific host has a different SSH key registered, a different `ansible_user`, a stale `known_hosts` entry, or its Security Group/firewall differs from the rest of the fleet.
+- Investigation Steps: `ssh -vvv` directly to that one host using the exact same key/user Ansible is configured with; diff that host's inventory/host_vars against a working host.
+- Resolution: Fix whatever the diff reveals — usually a missing key deployment or an inventory typo for that single host.
+- Prevention: Manage SSH key deployment consistently via automation (not manually per-server) so a single host can't silently drift.
+
+**Issue: "Ansible reports that a module cannot be found"**
+- Symptoms: `ERROR! couldn't resolve module/action 'ec2_instance'`.
+- Root Cause: The module now lives in a Collection that isn't installed (post-2.10 modularization moved most non-core modules out of Ansible core), or a typo in the module's fully-qualified name.
+- Investigation Steps: Check `ansible-galaxy collection list` to see what's actually installed; check the module's current fully-qualified name in current documentation (many renamed to `amazon.aws.ec2_instance` style names).
+- Resolution: `ansible-galaxy collection install amazon.aws` (or whichever collection owns it), and reference the module by its full `namespace.collection.module` name.
+- Prevention: Pin collection versions in a `requirements.yml` committed to Git so this doesn't vary by whoever's control node happens to have which collections installed.
+
+**Issue: "Python is not installed on a newly provisioned server"**
+- Symptoms: `"module_stdout": "/bin/sh: python3: command not found"` on a brand-new minimal image.
+- Root Cause: Minimal/hardened base images (some container-derived AMIs, fresh minimal cloud images) don't ship Python by default, and almost all Ansible modules require it on the target.
+- Resolution: Run a bootstrap task using the `raw` module (the ONE module that doesn't require Python on the target) to install Python first, before anything else:
+```yaml
+- name: Bootstrap Python on a minimal image
+  raw: apt-get update && apt-get install -y python3
+  changed_when: true
+```
+- Prevention: Bake Python into your golden AMI/base image at build time (e.g. via Packer) so no server ever starts without it.
+
+**Issue: "A server has different package versions from other servers"**
+- Symptoms: Drift detected — e.g. `nginx` is v1.18 on some servers, v1.22 on others, despite the same playbook supposedly having run everywhere.
+- Root Cause: The playbook used `state: present` (installs "a" version, doesn't enforce a specific one) or `state: latest` (installs whatever's newest AT THE TIME it ran — different servers provisioned at different times get different "latest").
+- Resolution: Pin an exact version (`name: nginx=1.22.0-1ubuntu1` for apt) so every server converges to the identical version regardless of when the playbook runs.
+- Prevention: Never use `state: latest` in production for anything where version consistency matters; always pin explicit versions for production packages.
+
+**Issue: "A deployment fails halfway through — how do you make the playbook resilient?"**
+- Symptoms: A multi-step deploy playbook fails on step 6 of 10, leaving the server in a partially-updated state.
+- Root Cause: No `block/rescue` around risky steps, and no `serial` batching to limit blast radius to a subset of the fleet.
+- Resolution: Wrap the risky deployment steps in a `block`, with a `rescue` that restores the previous known-good state (from a pre-deploy backup/snapshot task); combine with `serial` so a failure only affects the current batch, not the whole fleet, and `max_fail_percentage` to auto-abort the rollout if failures exceed a threshold.
+- Prevention: Never deploy 100% of a fleet in one ungated batch — always design for partial-failure containment upfront (see Section 27).
+
+**Issue: "Playbook completes successfully but the expected configuration isn't applied"**
+- Symptoms: Every task reports `ok`/`changed` as expected, but manually checking the server shows the old config is still active.
+- Root Cause (ranked): A handler was notified but never actually fired (e.g. `meta: flush_handlers` needed but missing, or the play ended before the handler section); the task actually targeted the wrong host/group due to an inventory group mismatch; the service wasn't actually restarted after a config change so the running process still has the old config in memory.
+- Investigation Steps: Confirm the file's ACTUAL content on the target after the run (`cat` the real file); check whether the relevant handler shows as run in the output; confirm `ansible-inventory --list` actually includes the host you think it does under the group you targeted.
+- Resolution: Add the missing handler notification/flush, or explicitly restart the service as a task rather than relying solely on a handler if timing is uncertain.
+- Prevention: Add a post-deploy verification task (e.g. a `uri` health check or a config-value assertion) as a standard last step, not just trusting "changed: true" as proof the end state is correct.
+
+**Issue: "Playbook works manually but fails when executed through cron"**
+- Symptoms: Running the playbook by hand from an interactive shell works; the same command scheduled via cron fails or behaves differently.
+- Root Cause: Cron runs with a minimal environment — no `PATH`, no shell profile/rc files sourced, so `ansible-playbook` (or the Python it depends on) may not be found, or `ANSIBLE_CONFIG`/SSH agent variables your interactive shell has aren't present in cron's environment.
+- Investigation Steps: Compare `env` from your interactive shell vs a temporary cron job that just runs `env >> /tmp/cron_env.txt`.
+- Resolution: Use full absolute paths in the cron entry (`/usr/local/bin/ansible-playbook`), explicitly set required environment variables inside the cron script itself rather than assuming they're inherited, and load any needed SSH agent/keys explicitly.
+- Prevention: Always test scheduled automation in as close to its real execution environment as possible, not just interactively — this class of bug is extremely common and easy to prevent by testing properly upfront.
+
+**Issue: "Disk-space failure during an Ansible deployment"**
+- Symptoms: A task fails mid-deploy with `No space left on device`.
+- Root Cause: Target server ran out of disk during file copy/package install — commonly from accumulated old release artifacts, logs, or package caches never cleaned up.
+- Investigation Steps: `df -h` on the affected target to confirm and identify which mount/partition is full; `du -sh /* | sort -rh` to find what's consuming space.
+- Resolution: Free space (clean old releases/package cache), or extend the volume if this is a right-sizing issue, then re-run the playbook — it will safely resume/redo only what's needed since it's idempotent.
+- Prevention: Add a cleanup task for old releases/artifacts as a standard step in the deploy playbook itself, and monitor disk usage proactively rather than discovering it mid-deploy.
+
+**Issue: "Segmentation fault during Ansible execution"**
+- Symptoms: A module or the `ansible` process itself crashes with a segfault, rather than a normal Python traceback.
+- Root Cause: Almost always a lower-level issue — a broken/incompatible Python C-extension dependency on the CONTROL node (not the target), or a corrupted Python installation, rather than anything in your playbook logic itself.
+- Investigation Steps: Reproduce with `-vvv` to see exactly which module/step segfaults; check `python3 --version` and try reinstalling the specific Python package suspected (often something like `cryptography` or `pywinrm` with a mismatched compiled extension).
+- Resolution: Reinstall/rebuild the offending Python dependency in a clean virtual environment on the control node; consider isolating the Ansible control environment in its own container/venv specifically to avoid system-Python dependency conflicts.
+- Prevention: Run Ansible from a dedicated, version-pinned virtual environment or container image, never the system Python shared with unrelated tooling.
+
 ### Interview Questions (Section 25)
 
 - Q: A task shows "changed: true" every run even though nothing is actually different — what's likely wrong and how do you fix it?
   A: The task probably uses `shell`/`command` without idempotency logic; fix by using a dedicated module, or adding a `creates`/`removes` guard.
 - Q: How would you debug why a specific host is missing an expected variable value?
   A: Run `ansible-inventory --host <hostname> --vars` to see the fully-resolved variable precedence result for that specific host, then trace back which source should have provided it.
+- Q: A module can't be found — what's your first check?
+  A: `ansible-galaxy collection list` to confirm the owning collection is actually installed, and verify you're using the module's current fully-qualified `namespace.collection.module` name.
+- Q: How do you bootstrap Python onto a server that doesn't have it yet?
+  A: Use the `raw` module (the one module that needs no Python on the target) to install Python first, before any normal module can run.
+- Q: A playbook runs fine by hand but fails under cron — why, typically?
+  A: Cron provides a minimal environment (no PATH, no shell profile) — the fix is using absolute paths and explicitly setting any required environment variables inside the cron job itself.
 
 ---
 
@@ -2144,7 +2474,191 @@ Format: **Scenario → Approach** (concise; ask if you want any single one expan
 
 ---
 
-## 31. Cheat Sheet & One-Page Revision
+## 31. Windows Automation (WinRM)
+
+### What is WinRM?
+
+- **WinRM (Windows Remote Management)** is Microsoft's remote management protocol — the Windows equivalent of what SSH is for Linux. It's how Ansible talks to Windows managed nodes, since Windows has no native SSH-based module execution model the way Linux does (OpenSSH on Windows exists but Ansible's Windows support is built around WinRM).
+- **Why Ansible needs a different connection method for Windows:** Windows doesn't run the Python-based module execution model the same way — instead, Ansible sends **PowerShell** scripts over WinRM, and Windows-specific modules are written for that (`win_*` modules), not the standard Linux modules.
+
+### How It Works — Connection Flow
+
+```mermaid
+sequenceDiagram
+    participant CN as Control Node (Linux/macOS)
+    participant W as Windows Managed Node
+    CN->>W: WinRM connect (HTTP/HTTPS, port 5985/5986)
+    CN->>W: Send PowerShell script (win_* module)
+    W->>W: Execute PowerShell locally
+    W-->>CN: Return JSON result
+```
+- Note: the **control node itself must still be Linux/macOS** — you cannot run `ansible-playbook` FROM a Windows machine as the control node; Windows can only ever be a managed (target) node.
+
+### Configuring WinRM for Ansible
+
+```ini
+# inventory.ini
+[windows_servers]
+win1.cmg.internal
+
+[windows_servers:vars]
+ansible_connection=winrm            # use WinRM instead of default SSH
+ansible_winrm_transport=ntlm         # or 'kerberos'/'credssp' depending on your auth setup
+ansible_port=5986                   # 5986 = HTTPS (encrypted), 5985 = HTTP (unencrypted, avoid in production)
+ansible_user=Administrator
+ansible_password: "{{ vault_windows_admin_password }}"   # Vault-encrypted, never plain text
+ansible_winrm_server_cert_validation=ignore   # only for self-signed certs in a controlled lab; validate properly in production
+```
+- On the WINDOWS side, WinRM must first be enabled and configured to accept connections — usually via a one-time PowerShell bootstrap script (`ConfigureRemotingForAnsible.ps1`, provided by the Ansible project) run once, manually or via existing configuration management, before Ansible can manage that host at all.
+
+### Basic Windows Modules
+
+```yaml
+- name: Test connectivity to a Windows host
+  win_ping:
+
+- name: Ensure a Windows feature is installed (IIS example)
+  win_feature:
+    name: Web-Server
+    state: present
+
+- name: Copy a file to a Windows host
+  win_copy:
+    src: app.config
+    dest: C:\inetpub\wwwroot\app.config
+```
+
+### `win_command` vs `win_shell`
+
+Exactly the same distinction as `command` vs `shell` on Linux (Section 6), applied to Windows:
+
+| | `win_command` | `win_shell` |
+|---|---|---|
+| Runs through a shell? | No — runs the executable directly | Yes — runs through PowerShell, supports pipes/variables |
+| Safer? | Yes | Riskier with untrusted input |
+| When to use | Simple executable calls | Only when you genuinely need PowerShell pipeline features |
+
+```yaml
+- name: Simple executable call - use win_command
+  win_command: ipconfig /all
+
+- name: Needs PowerShell pipeline features - use win_shell
+  win_shell: Get-Service | Where-Object {$_.Status -eq "Running"}
+```
+
+### Troubleshooting a WinRM Error
+
+- Symptoms: `winrm or requests is not installed` / connection timeout / `Server certificate verification failed`.
+- Root Cause (ranked): The `pywinrm` Python package isn't installed on the control node; WinRM isn't enabled/configured on the target Windows host yet; firewall blocking port 5985/5986; a self-signed cert failing validation when `ansible_winrm_server_cert_validation` isn't set to `ignore` (lab) or a properly trusted cert isn't installed (production).
+- Investigation Steps: `pip show pywinrm` on the control node to confirm it's installed; test connectivity with `ansible windows_servers -m win_ping -vvv` for detailed connection debugging.
+- Resolution: Install `pywinrm` (`pip install pywinrm`) on the control node; re-run the `ConfigureRemotingForAnsible.ps1` bootstrap script on the target if WinRM was never properly configured; open the correct port in the Windows Firewall/Security Group.
+- Prevention: Bake WinRM configuration into the Windows golden image/AMI so every new Windows server is Ansible-manageable from first boot, rather than a manual one-off setup step.
+
+### Real Production Example
+
+- CMG-style hybrid estate: most of the estate is Linux (EC2, EKS), but a handful of legacy Windows-hosted internal tools still need patching/configuration — a small, separate `windows_servers` inventory group with WinRM-specific `group_vars`, using the exact same playbook/role structure and Vault-encrypted credentials pattern as the Linux estate, just with `win_*` modules instead of their Linux equivalents.
+
+### Common Mistakes
+
+- Trying to use standard Linux modules (`copy`, `service`, `command`) against a Windows host instead of their `win_*` equivalents — they simply don't work on Windows targets.
+- Leaving `ansible_winrm_server_cert_validation=ignore` in a production inventory instead of only using it for lab/test environments — this disables real certificate validation permanently.
+- Using unencrypted WinRM (port 5985) in production instead of HTTPS (port 5986).
+
+### Interview Questions (Section 31)
+
+- Q: Why can't Windows be an Ansible control node?
+  A: Ansible's control-node tooling and connection model are built for Linux/macOS/WSL; Windows can only be a managed (target) node, connected to via WinRM.
+- Q: What's the Windows equivalent of the `command`/`shell` module distinction?
+  A: `win_command` (direct execution, no shell) vs `win_shell` (runs through PowerShell, supports pipes/variables) — same underlying trade-off as Linux.
+- Q: What must be configured on a Windows server BEFORE Ansible can manage it?
+  A: WinRM must be enabled and configured to accept remote connections, typically via the one-time `ConfigureRemotingForAnsible.ps1` bootstrap script.
+
+---
+
+## 32. Testing, Code Quality & Enterprise-Scale Architecture
+
+### Testing Ansible Roles with Molecule
+
+- **What is Molecule?** A dedicated testing framework for Ansible roles — it spins up a temporary test instance (Docker container, Vagrant VM, or cloud instance), runs your role against it, verifies the result, and tears the test instance down — all automatically.
+- **Why it's needed:** Without Molecule, "testing" a role usually means manually running it against a real (or scratch) server and eyeballing the result — slow, manual, and not repeatable in CI. Molecule makes role testing automatable and repeatable, the same way unit tests work for application code.
+- **How it works (basic flow):**
+```mermaid
+flowchart LR
+    A[molecule test] --> B[Create test instance<br/>Docker/Vagrant/cloud]
+    B --> C[Run the role against it]
+    C --> D[Run idempotence check<br/>-- run the role AGAIN,<br/>expect zero changes]
+    D --> E[Run verification tests<br/>e.g. Testinfra/Ansible asserts]
+    E --> F[Destroy test instance]
+```
+
+```bash
+molecule init role my_nginx_role     # scaffold a new role with Molecule test structure
+molecule test                        # full cycle: create -> converge -> idempotence -> verify -> destroy
+molecule converge                    # just run the role against the test instance (for iterative debugging)
+molecule destroy                     # tear down the test instance manually
+```
+
+**Example Molecule scenario config (`molecule/default/molecule.yml`):**
+```yaml
+driver:
+  name: docker                        # test instances are Docker containers - fast, disposable
+platforms:
+  - name: instance
+    image: geerlingguy/docker-ubuntu2204-ansible   # a pre-built image with Ansible's dependencies included
+provisioner:
+  name: ansible                       # Molecule uses Ansible itself to run the role under test
+verifier:
+  name: ansible                       # verification also written as Ansible tasks/asserts
+```
+
+**Why the "idempotence check" specifically matters:** Molecule's default test cycle runs the role TWICE and fails the test if the second run reports any `changed` tasks — this directly catches broken idempotency (Section 1's core Ansible principle) automatically, before it ever reaches production.
+
+### Code Review and Quality Gates for Ansible
+
+- **`ansible-lint`** as a mandatory CI gate — catches style issues, deprecated syntax, and known anti-patterns (like unpinned `shell` tasks with no `changed_when`) automatically, before a human reviewer even looks at the PR.
+- **`yamllint`** for pure YAML formatting/style consistency (indentation, line length) alongside `ansible-lint`'s Ansible-specific checks.
+- **Molecule in CI:** run `molecule test` for any role with logic complex enough to warrant it, as a required check before merge — not just lint, but an actual functional test.
+- **Human review checklist (beyond what linting catches):** Is this idempotent? Are secrets Vault-encrypted, not inline? Does a version/pin exist for any external collection/role dependency introduced? Is there a rollback path for anything destructive?
+- **Real production pattern:** A CMG-style Jenkins pipeline runs `ansible-lint` + `yamllint` + `molecule test` (for roles with a Molecule scenario defined) as required PR checks — a PR cannot merge until all three pass, in addition to a human reviewer's sign-off.
+
+### Designing Ansible for an Enterprise Environment (1,000+ Servers, Multiple Teams)
+
+- **Environment separation:** Fully separate inventories per environment (`inventory/dev/`, `inventory/staging/`, `inventory/production/`), never a single inventory with an "environment" variable distinguishing prod from non-prod — this makes it structurally impossible to accidentally target production when you meant staging.
+- **Environment-specific variables:** `group_vars/all.yml` for genuinely universal settings, then `inventory/<env>/group_vars/` for anything that differs by environment (resource sizing, feature flags, endpoint URLs) — the same roles run everywhere, only the variables differ.
+- **Reusable roles across teams:** A shared, centrally-maintained "platform" role library (common hardening, base packages, logging agents) that every team's playbooks consume as a dependency, versioned via `requirements.yml` so teams can pin to a known-good version and upgrade deliberately rather than being broken by an unannounced change.
+- **Enforcing idempotency at scale:** A CI-enforced rule (via `ansible-lint` custom rules or a pipeline check) that flags any `shell`/`command` task lacking `changed_when`/`creates`/`removes` — turning "idempotency by convention" into "idempotency by CI gate."
+- **Secrets across multiple environments:** Separate Vault IDs per environment (Section 17), each environment's password sourced from its own scoped secrets-manager entry — a leaked dev credential structurally cannot expose production secrets.
+- **Version control strategy:** Ansible code lives in Git like any other codebase — a shared `common`/`platform` repo consumed as a Galaxy-style dependency by per-team/per-application repos, with semantic version tags (`v2.3.0`) so downstream consumers pin explicitly rather than always pulling `main`/`HEAD`.
+- **Automation framework for 1,000+ servers:** Functional/team-based split of inventories and pipelines (not one giant playbook run against everything at once), dynamic inventory (Section 3) as mandatory (a static list is unmanageable at this scale), and `forks`/`strategy: free` tuning (Section 20) to keep run times reasonable.
+
+```mermaid
+flowchart TD
+    A[Shared platform role library<br/>versioned in Git] --> B[Team A repo<br/>pins platform v2.3.0]
+    A --> C[Team B repo<br/>pins platform v2.1.0]
+    B --> D[dev inventory]
+    B --> E[staging inventory]
+    B --> F[production inventory]
+```
+
+### Common Mistakes
+
+- Treating Molecule as optional "nice to have" rather than a required gate — this is exactly how a broken, non-idempotent role reaches production undetected.
+- One single inventory file for all environments distinguished only by a variable, instead of physically separate inventories per environment — a single `--limit` typo away from a production incident.
+- Letting every team independently reinvent common roles (security hardening, base setup) instead of sharing one versioned platform library — leads to inconsistent security posture across the enterprise.
+- No version pinning on shared roles/collections, so an unannounced upstream change silently breaks downstream teams' pipelines.
+
+### Interview Questions (Section 32)
+
+- Q: What is Molecule and what specific bug class does its default test cycle catch automatically?
+  A: A role-testing framework that spins up a disposable test instance, runs the role, and — critically — runs it a SECOND time to verify zero changes on the second run, directly catching broken idempotency before production.
+- Q: How would you structure Ansible for 1,000+ servers across multiple teams?
+  A: Fully separate inventories per environment, a shared versioned platform role library consumed via `requirements.yml` pins, per-team ownership of their own application-specific roles, dynamic inventory as mandatory at this scale, and CI-enforced idempotency/lint/Molecule gates.
+- Q: How do you keep secrets properly isolated across dev/staging/production in an enterprise setup?
+  A: Separate Vault IDs per environment, each sourced from its own scoped secrets-manager entry, so no single leaked credential can cross an environment boundary.
+
+---
+
+## 33. Cheat Sheet & One-Page Revision
 
 ### Comparisons with Similar Tools
 
@@ -2197,11 +2711,14 @@ ansible-inventory --host <hostname> --vars                # debug resolved varia
 ansible-vault edit secrets.yml                             # edit encrypted secrets
 ansible-galaxy install <role>                              # install a community role
 ansible-lint site.yml                                       # lint for anti-patterns
+ansible-playbook site.yml --start-at-task="Task name"       # resume from a specific task
+molecule test                                               # full role test cycle (create/converge/idempotence/verify/destroy)
+ansible windows_servers -m win_ping                          # test WinRM connectivity
 ```
 
 ### Most Important Modules
 
-`package`, `service`/`systemd`, `template`, `copy`, `file`, `lineinfile`, `user`, `cron`, `uri` (health checks), `command`/`shell` (last resort only).
+`package`, `service`/`systemd`, `template`, `copy`, `file`, `lineinfile`, `user`, `cron`, `uri` (health checks), `command`/`shell` (last resort only), `win_ping`/`win_copy`/`win_command` (Windows equivalents).
 
 ### Most Important Variable Rules
 
@@ -2219,6 +2736,9 @@ ansible-lint site.yml                                       # lint for anti-patt
 - Confusing `import_*` (static) with `include_*` (dynamic).
 - Leaving `forks` at the default (5) for large fleets.
 - Treating Ansible as a state-tracking infrastructure tool like Terraform.
+- Skipping `changed_when: false` on read-only `command`/`shell` diagnostic tasks.
+- Treating Molecule/lint as optional instead of a required merge gate.
+- Using `state: latest` in production where version consistency actually matters.
 
 ### Quick Revision Questions (Test Yourself)
 
@@ -2232,6 +2752,11 @@ ansible-lint site.yml                                       # lint for anti-patt
 8. How do you safely use Ansible Vault inside a CI/CD pipeline?
 9. What's the difference between static and dynamic inventory, and when would you use each?
 10. What does `--check --diff` do, and why should it be mandatory before a production run?
+11. What's the difference between `become` and `sudo`?
+12. What does Molecule's idempotence check specifically catch?
+13. Why can't Windows be an Ansible control node?
+14. What's the difference between `failed_when` and the default failure behavior?
+15. What does `any_errors_fatal: true` change about how a playbook handles a single host's failure?
 
 ---
 
