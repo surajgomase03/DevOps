@@ -1161,61 +1161,2734 @@ Magic variables are built-in Ansible variables that provide runtime information 
 
 ## 10. Conditionals & Loops
 
-### Conditionals (`when`)
+# Ansible `when` Conditions
 
-Run a task only if a condition is true.
+## What is `when`?
+
+- `when` is used for conditional task execution in Ansible.
+- A task runs only when the `when` condition evaluates to `true`.
+- `when` does not require `{{ }}` around variables.
+
+### Basic Syntax
 
 ```yaml
-- name: Install httpd only on RedHat-family systems
-  yum:
-    name: httpd
+- name: Install nginx
+  ansible.builtin.package:
+    name: nginx
     state: present
-  when: ansible_facts['os_family'] == "RedHat"
-
-- name: Restart service only if the config file changed
-  service:
-    name: myapp
-    state: restarted
-  when: config_result.changed
+  when: ansible_os_family == "RedHat"
 ```
+
+- If the condition is true → task runs.
+- If the condition is false → task is skipped.
+
+---
+
+## 1. Basic Equality Condition
+
+```yaml
+- name: Run only on web01
+  ansible.builtin.debug:
+    msg: "This is web01"
+  when: inventory_hostname == "web01"
+```
+
+---
+
+## 2. String Comparison
+
+```yaml
+when: ansible_os_family == "RedHat"
+when: ansible_distribution == "Ubuntu"
+when: ansible_hostname == "web01"
+```
+
+### Operators
+
+| Operator | Meaning |
+|---|---|
+| `==` | Equal |
+| `!=` | Not equal |
+| `>` | Greater than |
+| `<` | Less than |
+| `>=` | Greater than or equal |
+| `<=` | Less than or equal |
+
+---
+
+## 3. Numeric Conditions
+
+```yaml
+- name: Check memory
+  ansible.builtin.debug:
+    msg: "Memory is greater than 4 GB"
+  when: ansible_memtotal_mb > 4096
+```
+
+Another example:
+
+```yaml
+when: disk_usage > 80
+```
+
+---
+
+## 4. Multiple Conditions Using `and`
+
+Both conditions must be true.
+
+```yaml
+- name: Run on production RedHat server
+  ansible.builtin.debug:
+    msg: "Production RedHat server"
+  when:
+    - ansible_os_family == "RedHat"
+    - environment == "production"
+```
+
+Equivalent:
+
+```yaml
+when: ansible_os_family == "RedHat" and environment == "production"
+```
+
+---
+
+## 5. Multiple Conditions Using `or`
+
+At least one condition must be true.
+
+```yaml
+- name: Run on RedHat or Debian
+  ansible.builtin.debug:
+    msg: "Supported operating system"
+  when: ansible_os_family == "RedHat" or ansible_os_family == "Debian"
+```
+
+---
+
+## 6. `not`
+
+Used when a condition should be false.
+
+```yaml
+when: not nginx_installed
+```
+
+Example:
+
+```yaml
+- name: Install nginx
+  ansible.builtin.package:
+    name: nginx
+    state: present
+  when: not nginx_installed
+```
+
+---
+
+## 7. Check If Variable is Defined
+
+Use `is defined`.
+
+```yaml
+- name: Display application version
+  ansible.builtin.debug:
+    msg: "Version is {{ app_version }}"
+  when: app_version is defined
+```
+
+---
+
+## 8. Check If Variable is Undefined
+
+Use `is not defined`.
+
+```yaml
+- name: Set default configuration
+  ansible.builtin.debug:
+    msg: "Application version is not defined"
+  when: app_version is not defined
+```
+
+---
+
+## 9. Check If Variable is True
+
+```yaml
+when: enable_monitoring
+```
+
+Example:
+
+```yaml
+- name: Install monitoring agent
+  ansible.builtin.package:
+    name: prometheus-node-exporter
+    state: present
+  when: enable_monitoring
+```
+
+---
+
+## 10. Check If Variable is False
+
+```yaml
+when: not enable_monitoring
+```
+
+---
+
+## 11. Check If String Contains a Value
+
+Use `in`.
+
+```yaml
+when: "'production' in environment"
+```
+
+Example:
+
+```yaml
+when: "'web' in group_names"
+```
+
+This checks whether the current host belongs to a group containing `web`.
+
+For an exact group membership check:
+
+```yaml
+when: "'webservers' in group_names"
+```
+
+---
+
+## 12. Check Multiple Groups
+
+```yaml
+when:
+  - "'webservers' in group_names"
+  - "'production' in group_names"
+```
+
+This requires the host to belong to both groups.
+
+---
+
+## 13. Check File Exists
+
+Use the `stat` module first.
+
+```yaml
+- name: Check configuration file
+  ansible.builtin.stat:
+    path: /etc/myapp/app.conf
+  register: config_file
+
+- name: Display message
+  ansible.builtin.debug:
+    msg: "Configuration file exists"
+  when: config_file.stat.exists
+```
+
+---
+
+## 14. Check Directory Exists
+
+```yaml
+- name: Check directory
+  ansible.builtin.stat:
+    path: /opt/myapp
+  register: app_dir
+
+- name: Display message
+  ansible.builtin.debug:
+    msg: "Directory exists"
+  when: app_dir.stat.isdir
+```
+
+---
+
+## 15. Check Command Result
+
+Use `register`.
+
+```yaml
+- name: Check nginx
+  ansible.builtin.command: systemctl is-active nginx
+  register: nginx_status
+  changed_when: false
+  failed_when: false
+
+- name: Display status
+  ansible.builtin.debug:
+    msg: "Nginx is running"
+  when: nginx_status.rc == 0
+```
+
+### Important
+
+- `register` stores the result of a task.
+- `rc` is commonly the command return code.
+- `rc == 0` generally means successful execution.
+
+---
+
+## 16. `failed_when`
+
+`failed_when` controls whether a task should be considered failed.
+
+```yaml
+- name: Check application
+  ansible.builtin.command: /opt/app/healthcheck.sh
+  register: healthcheck
+  failed_when: healthcheck.rc != 0
+```
+
+---
+
+## 17. `changed_when`
+
+`changed_when` controls whether Ansible reports the task as changed.
+
+```yaml
+- name: Check application version
+  ansible.builtin.command: /opt/app/version.sh
+  register: version
+  changed_when: false
+```
+
+This is useful for read-only commands.
+
+---
+
+## 18. Check Registered Output
+
+```yaml
+- name: Get application version
+  ansible.builtin.command: /opt/app/version.sh
+  register: app_version
+  changed_when: false
+
+- name: Display old version warning
+  ansible.builtin.debug:
+    msg: "Old application version detected"
+  when: "'1.0' in app_version.stdout"
+```
+
+Common registered-result fields:
+
+```
+result.rc
+result.stdout
+result.stderr
+result.stdout_lines
+```
+
+---
+
+## 19. Check Empty Variable
+
+```yaml
+when: app_version | length > 0
+```
+
+Example:
+
+```yaml
+- name: Display version
+  ansible.builtin.debug:
+    msg: "{{ app_version }}"
+  when: app_version is defined and app_version | length > 0
+```
+
+---
+
+## 20. Check List Contains Value
+
+```yaml
+supported_os:
+  - RedHat
+  - Debian
+  - Ubuntu
+```
+
+Condition:
+
+```yaml
+when: ansible_os_family in supported_os
+```
+
+---
+
+## 21. `in` with a List
+
+```yaml
+- name: Install package
+  ansible.builtin.package:
+    name: nginx
+    state: present
+  when: ansible_distribution in ["Ubuntu", "Debian"]
+```
+
+---
+
+## 22. `not in`
+
+```yaml
+when: ansible_distribution not in ["Ubuntu", "Debian"]
+```
+
+---
+
+## 23. OS-Based Conditions
+
+### RedHat Family
+
+```yaml
+when: ansible_os_family == "RedHat"
+```
+
+### Debian Family
+
+```yaml
+when: ansible_os_family == "Debian"
+```
+
+### Ubuntu
+
+```yaml
+when: ansible_distribution == "Ubuntu"
+```
+
+### Example
+
+```yaml
+- name: Install nginx on RedHat
+  ansible.builtin.dnf:
+    name: nginx
+    state: present
+  when: ansible_os_family == "RedHat"
+
+- name: Install nginx on Debian
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+  when: ansible_os_family == "Debian"
+```
+
+---
+
+## 24. Hostname-Based Condition
+
+```yaml
+when: inventory_hostname == "web01"
+```
+
+Example:
+
+```yaml
+- name: Run only on primary server
+  ansible.builtin.debug:
+    msg: "This is the primary server"
+  when: inventory_hostname == "web01"
+```
+
+---
+
+## 25. Group-Based Condition
+
+```yaml
+when: "'webservers' in group_names"
+```
+
+Example:
+
+```yaml
+- name: Install nginx
+  ansible.builtin.package:
+    name: nginx
+    state: present
+  when: "'webservers' in group_names"
+```
+
+---
+
+## 26. Multiple Conditions
+
+Example:
+
+```yaml
+- name: Install production monitoring
+  ansible.builtin.package:
+    name: prometheus-node-exporter
+    state: present
+  when:
+    - environment == "production"
+    - "'webservers' in group_names"
+    - ansible_os_family == "RedHat"
+```
+
+All three conditions must be true.
+
+---
+
+## 27. Parentheses in Conditions
+
+For complex conditions:
+
+```yaml
+when: >
+  (ansible_os_family == "RedHat" or
+   ansible_os_family == "Debian") and
+  environment == "production"
+```
+
+Meaning:
+
+```
+(RedHat OR Debian)
+        AND
+   production
+```
+
+---
+
+## 28. Condition with `register`
+
+```yaml
+- name: Check disk
+  ansible.builtin.shell: df -h /
+  register: disk_result
+  changed_when: false
+
+- name: Display warning
+  ansible.builtin.debug:
+    msg: "Check disk usage"
+  when: "'90%' in disk_result.stdout"
+```
+
+---
+
+## 29. `when` with `loop`
+
+Conditions can be applied to individual loop items.
+
+```yaml
+- name: Install selected packages
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nginx
+    - git
+    - docker
+  when: item != "docker"
+```
+
+Here:
+
+```
+nginx  → runs
+git    → runs
+docker → skipped
+```
+
+---
+
+## 30. `when` with `include_tasks`
+
+```yaml
+- name: Include production tasks
+  ansible.builtin.include_tasks: production.yml
+  when: environment == "production"
+```
+
+---
+
+## 31. `when` with `import_tasks`
+
+```yaml
+- name: Import RedHat tasks
+  ansible.builtin.import_tasks: redhat.yml
+  when: ansible_os_family == "RedHat"
+```
+
+---
+
+## 32. `when` with `block`
+
+A condition can be applied to a block.
+
+```yaml
+- name: Production configuration
+  block:
+
+    - name: Install monitoring
+      ansible.builtin.package:
+        name: prometheus-node-exporter
+        state: present
+
+    - name: Start monitoring
+      ansible.builtin.service:
+        name: prometheus-node-exporter
+        state: started
+
+  when: environment == "production"
+```
+
+---
+
+## 33. `when` with `else` Equivalent
+
+Ansible does not use a normal if/else syntax for tasks.
+
+Instead, use separate tasks.
+
+```yaml
+- name: Production message
+  ansible.builtin.debug:
+    msg: "Production environment"
+  when: environment == "production"
+
+- name: Non-production message
+  ansible.builtin.debug:
+    msg: "Non-production environment"
+  when: environment != "production"
+```
+
+---
+
+## 34. Using `ternary`
+
+For assigning a value based on a condition:
+
+```yaml
+- name: Display environment
+  ansible.builtin.debug:
+    msg: "{{ 'Production' if environment == 'production' else 'Non-Production' }}"
+```
+
+Another common pattern:
+
+```yaml
+msg: "{{ enable_ssl | ternary('HTTPS', 'HTTP') }}"
+```
+
+---
+
+## 35. Check Boolean Variables
+
+Variables:
+
+```yaml
+enable_ssl: true
+```
+
+Condition:
+
+```yaml
+when: enable_ssl
+```
+
+For false:
+
+```yaml
+when: not enable_ssl
+```
+
+Avoid unnecessary comparisons such as:
+
+```yaml
+when: enable_ssl == true
+```
+
+Prefer:
+
+```yaml
+when: enable_ssl
+```
+
+---
+
+## 36. `is defined` + Comparison
+
+If a variable may not exist, check it before using it.
+
+```yaml
+- name: Configure application
+  ansible.builtin.debug:
+    msg: "Version is {{ app_version }}"
+  when:
+    - app_version is defined
+    - app_version == "2.0"
+```
+
+This is safer than directly assuming the variable exists.
+
+---
+
+## 37. Common Tests Used with `when`
+
+Ansible provides Jinja tests that are commonly used in conditions.
+
+### Defined
+
+```yaml
+when: variable is defined
+```
+
+### Undefined
+
+```yaml
+when: variable is not defined
+```
+
+### String
+
+```yaml
+when: variable is string
+```
+
+### Number
+
+```yaml
+when: variable is number
+```
+
+### Boolean
+
+```yaml
+when: variable is boolean
+```
+
+### True
+
+```yaml
+when: variable is true
+```
+
+### False
+
+```yaml
+when: variable is false
+```
+
+---
+
+## 38. File Tests
+
+Common tests include:
+
+```yaml
+when: result.stat.exists
+when: result.stat.isdir
+when: result.stat.isreg
+```
+
+Example:
+
+```yaml
+- name: Check file
+  ansible.builtin.stat:
+    path: /etc/myapp/config.yml
+  register: config
+
+- name: Backup existing configuration
+  ansible.builtin.copy:
+    src: /etc/myapp/config.yml
+    dest: /etc/myapp/config.yml.bak
+    remote_src: true
+  when: config.stat.exists
+```
+
+---
+
+## 39. Common `when` Operators
+
+| Operator | Example | Meaning |
+|---|---|---|
+| `==` | `x == 10` | Equal |
+| `!=` | `x != 10` | Not equal |
+| `>` | `x > 10` | Greater than |
+| `<` | `x < 10` | Less than |
+| `>=` | `x >= 10` | Greater/equal |
+| `<=` | `x <= 10` | Less/equal |
+| `and` | `x > 5 and y > 5` | Both true |
+| `or` | `x > 5 or y > 5` | Either true |
+| `not` | `not x` | Negation |
+| `in` | `x in list` | Value exists in list |
+| `not in` | `x not in list` | Value does not exist in list |
+
+---
+
+## 40. Important Syntax Rule
+
+### Do NOT use `{{ }}` in `when`
+
+Correct:
+
+```yaml
+when: ansible_os_family == "RedHat"
+```
+
+Incorrect:
+
+```yaml
+when: "{{ ansible_os_family }}" == "RedHat"
+```
+
+For example, correct:
+
+```yaml
+when: "'webservers' in group_names"
+```
+
+Not:
+
+```yaml
+when: "{{ 'webservers' in group_names }}"
+```
+
+---
+
+## 41. Real Production Example
+
+### Requirement
+
+Install and start Nginx only on production web servers running RedHat.
+
+```yaml
+- name: Configure production web servers
+  hosts: all
+
+  tasks:
+
+    - name: Install nginx
+      ansible.builtin.package:
+        name: nginx
+        state: present
+      when:
+        - environment == "production"
+        - "'webservers' in group_names"
+        - ansible_os_family == "RedHat"
+
+    - name: Start nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+      when:
+        - environment == "production"
+        - "'webservers' in group_names"
+        - ansible_os_family == "RedHat"
+```
+
+---
+
+## 42. Common Interview Examples
+
+### Run only on RedHat
+
+```yaml
+when: ansible_os_family == "RedHat"
+```
+
+### Run only on Ubuntu
+
+```yaml
+when: ansible_distribution == "Ubuntu"
+```
+
+### Run only on web servers
+
+```yaml
+when: "'webservers' in group_names"
+```
+
+### Run only on one server
+
+```yaml
+when: inventory_hostname == "web01"
+```
+
+### Check variable exists
+
+```yaml
+when: app_version is defined
+```
+
+### Check variable does not exist
+
+```yaml
+when: app_version is not defined
+```
+
+### Check two conditions
+
+```yaml
+when:
+  - environment == "production"
+  - "'webservers' in group_names"
+```
+
+### Check either condition
+
+```yaml
+when: ansible_os_family == "RedHat" or ansible_os_family == "Debian"
+```
+
+### Check value in list
+
+```yaml
+when: ansible_distribution in ["Ubuntu", "Debian"]
+```
+
+### Check command succeeded
+
+```yaml
+when: command_result.rc == 0
+```
+
+### Check file exists
+
+```yaml
+when: config.stat.exists
+```
+
+---
+
+## Interview Answer
+
+`when` is Ansible's conditional mechanism used to execute a task only when a specified condition is true. It can be used with variables, facts, groups, registered results, operating systems, files, loops, and multiple logical conditions.
+
+---
+
+## Important Points to Remember
+
+- `when` controls conditional task execution.
+- Do not use `{{ }}` inside `when`.
+- Use `and` when all conditions must be true.
+- Use `or` when any condition can be true.
+- Use `not` for negation.
+- Use `is defined` before using optional variables.
+- Use `register` when a later task depends on the result of an earlier task.
+- Use `group_names` for group-based conditions.
+- Use `inventory_hostname` for host-specific conditions.
+- Use `ansible_os_family` or `ansible_distribution` for OS-specific conditions.
+- Use `stat` when checking whether a file or directory exists.
+- Use `failed_when` to customize failure conditions.
+- Use `changed_when` to control whether a task is reported as changed.
+
+---
+
+## Quick Revision: All `when` Condition Patterns
+
+### Comparison
+
+```yaml
+when: var == "value"
+when: var != "value"
+when: var > 10
+when: var < 10
+when: var >= 10
+when: var <= 10
+```
+
+### Logical
+
+```yaml
+when: cond1 and cond2
+
+when:
+  - cond1
+  - cond2
+
+when: cond1 or cond2
+
+when: not var
+```
+
+### Defined / Undefined
+
+```yaml
+when: var is defined
+when: var is not defined
+```
+
+### Boolean Checks
+
+```yaml
+when: var        # true
+when: not var    # false
+```
+
+Avoid `when: var == true`.
+
+### Membership
+
+```yaml
+when: "'x' in list_or_group_names"
+when: "'x' not in list_or_group_names"
+when: var in [list]
+when: var not in [list]
+```
+
+### Registered Command/Task Result
+
+```yaml
+when: result.rc == 0
+when: "'text' in result.stdout"
+when: result | length > 0
+```
+
+### File/Stat Checks
+
+```yaml
+when: result.stat.exists
+when: result.stat.isdir
+when: result.stat.isreg
+```
+
+### OS/Host/Group Based
+
+```yaml
+when: ansible_os_family == "RedHat"
+when: ansible_distribution == "Ubuntu"
+when: inventory_hostname == "web01"
+when: "'webservers' in group_names"
+```
+
+### Multiple Conditions (AND, List Form)
+
+```yaml
+when:
+  - cond1
+  - cond2
+  - cond3
+```
+
+### Jinja Tests
+
+```yaml
+when: var is string
+when: var is number
+when: var is boolean
+when: var is true
+when: var is false
+```
+
+### Applies With
+
+- `loop`
+- `include_tasks`
+- `import_tasks`
+- `block`
+
+### Task Control
+
+```yaml
+failed_when: cond
+changed_when: cond
+```
+
+### Ternary (Value, Not Task Skip)
+
+```yaml
+msg: "{{ 'A' if cond else 'B' }}"
+msg: "{{ var | ternary('A', 'B') }}"
+```
+
+### Golden Rule
+
+Never wrap `when` conditions in `{{ }}`.
 
 ### Loops
 
-Repeat a task for each item in a list, instead of writing the same task many times.
+# Ansible Loops
+
+## 1. What is a Loop in Ansible?
+
+A loop is used to execute the same Ansible task multiple times with different values.
+
+Instead of writing multiple similar tasks, we can define a list of values and process them using `loop`.
+
+### Example
+
+Without loop:
 
 ```yaml
-- name: Install multiple packages
-  apt:
+- name: Install nginx
+  ansible.builtin.package:
+    name: nginx
+    state: present
+
+- name: Install git
+  ansible.builtin.package:
+    name: git
+    state: present
+
+- name: Install curl
+  ansible.builtin.package:
+    name: curl
+    state: present
+```
+
+With loop:
+
+```yaml
+- name: Install packages
+  ansible.builtin.package:
     name: "{{ item }}"
     state: present
   loop:
     - nginx
     - git
     - curl
-
-- name: Create multiple users with different settings
-  user:
-    name: "{{ item.name }}"
-    groups: "{{ item.groups }}"
-  loop:
-    - { name: 'alice', groups: 'sudo' }
-    - { name: 'bob', groups: 'developers' }
 ```
 
-**Older syntax you'll still see in legacy playbooks:** `with_items` — `loop` is the modern, preferred replacement.
+The loop executes the same task three times.
 
-### Combining Loop + Conditional
+---
+
+## 2. Basic Loop Syntax
 
 ```yaml
-- name: Restart only services that are currently running
-  service:
-    name: "{{ item }}"
-    state: restarted
+- name: Example loop
+  ansible.builtin.debug:
+    msg: "Installing {{ item }}"
   loop:
     - nginx
-    - postgresql
-  when: item in ansible_facts.services
+    - git
+    - curl
 ```
+
+Output:
+
+```
+Installing nginx
+Installing git
+Installing curl
+```
+
+### Important
+
+`item` is the default variable containing the current loop value.
+
+```
+loop list
+    |
+    v
+item = current value
+```
+
+---
+
+## 3. Loop with Package Installation
+
+A very common real-world example:
+
+```yaml
+- name: Install required packages
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - git
+    - vim
+    - curl
+    - wget
+    - unzip
+```
+
+Ansible processes:
+
+```
+git
+vim
+curl
+wget
+unzip
+```
+
+---
+
+## 4. Loop with Users
+
+Create multiple users:
+
+```yaml
+- name: Create application users
+  ansible.builtin.user:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - appuser
+    - deployuser
+    - backupuser
+```
+
+---
+
+## 5. Loop with Directories
+
+```yaml
+- name: Create application directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - /opt/app
+    - /opt/app/logs
+    - /opt/app/config
+    - /opt/app/backup
+```
+
+---
+
+## 6. Loop with Files
+
+```yaml
+- name: Create configuration files
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    mode: "0644"
+  loop:
+    - /tmp/app.conf
+    - /tmp/db.conf
+    - /tmp/cache.conf
+```
+
+---
+
+## 7. Loop with Services
+
+```yaml
+- name: Start required services
+  ansible.builtin.service:
+    name: "{{ item }}"
+    state: started
+    enabled: true
+  loop:
+    - nginx
+    - docker
+```
+
+---
+
+## 8. Loop with Variables
+
+Instead of hardcoding values in the task:
+
+```yaml
+vars:
+  packages:
+    - git
+    - curl
+    - wget
+    - vim
+
+tasks:
+
+  - name: Install packages
+    ansible.builtin.package:
+      name: "{{ item }}"
+      state: present
+    loop: "{{ packages }}"
+```
+
+This is cleaner and easier to maintain.
+
+---
+
+## 9. Loop with Dictionary
+
+Sometimes we need multiple values for each item.
+
+Example:
+
+```yaml
+vars:
+  users:
+    - name: appuser
+      uid: 2001
+    - name: deployuser
+      uid: 2002
+    - name: backupuser
+      uid: 2003
+
+tasks:
+
+  - name: Create users
+    ansible.builtin.user:
+      name: "{{ item.name }}"
+      uid: "{{ item.uid }}"
+      state: present
+    loop: "{{ users }}"
+```
+
+Here:
+
+```
+item.name
+item.uid
+```
+
+are used to access fields from the current dictionary.
+
+---
+
+## 10. Loop with Multiple Parameters
+
+Example:
+
+```yaml
+vars:
+  users:
+    - name: appuser
+      shell: /bin/bash
+    - name: deployuser
+      shell: /bin/bash
+    - name: backupuser
+      shell: /sbin/nologin
+
+tasks:
+
+  - name: Create users
+    ansible.builtin.user:
+      name: "{{ item.name }}"
+      shell: "{{ item.shell }}"
+      state: present
+    loop: "{{ users }}"
+```
+
+---
+
+## 11. Loop with `when`
+
+We can combine loops with conditions.
+
+```yaml
+- name: Install packages only on RedHat
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - git
+    - curl
+    - wget
+  when: ansible_os_family == "RedHat"
+```
+
+The condition applies to every loop iteration.
+
+---
+
+## 12. Loop with Item-Level Condition
+
+Sometimes the condition depends on the current item.
+
+```yaml
+- name: Install selected packages
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nginx
+    - git
+    - docker
+  when: item != "docker"
+```
+
+Result:
+
+```
+nginx  -> installed
+git    -> installed
+docker -> skipped
+```
+
+---
+
+## 13. Loop with Registered Variable
+
+A task can register the results of all loop iterations.
+
+```yaml
+- name: Check users
+  ansible.builtin.command:
+    cmd: "id {{ item }}"
+  loop:
+    - appuser
+    - deployuser
+    - backupuser
+  register: user_check
+  failed_when: false
+```
+
+The registered variable contains results for each loop item.
+
+Conceptually:
+
+```
+user_check
+    |
+    +-- results
+          |
+          +-- item = appuser
+          +-- item = deployuser
+          +-- item = backupuser
+```
+
+---
+
+## 14. Accessing Results of a Loop
+
+```yaml
+- name: Check users
+  ansible.builtin.command:
+    cmd: "id {{ item }}"
+  loop:
+    - appuser
+    - deployuser
+  register: user_check
+  failed_when: false
+
+- name: Display results
+  ansible.builtin.debug:
+    var: user_check.results
+```
+
+Each loop iteration creates one result inside:
+
+```
+user_check.results
+```
+
+---
+
+## 15. Loop with `item`
+
+Basic example:
+
+```yaml
+- name: Display package names
+  ansible.builtin.debug:
+    msg: "Package = {{ item }}"
+  loop:
+    - nginx
+    - git
+    - curl
+```
+
+Output:
+
+```
+Package = nginx
+Package = git
+Package = curl
+```
+
+`item` means: current loop value.
+
+---
+
+## 16. Custom Loop Variable
+
+If nested loops are used, the default `item` variable can become confusing.
+
+Use `loop_control.loop_var`.
+
+```yaml
+- name: Process users
+  ansible.builtin.debug:
+    msg: "User = {{ username }}"
+  loop:
+    - appuser
+    - deployuser
+  loop_control:
+    loop_var: username
+```
+
+Now:
+
+```
+username = current loop value
+```
+
+instead of:
+
+```
+item = current loop value
+```
+
+---
+
+## 17. `loop_control`
+
+`loop_control` provides additional control over loop execution and output.
+
+Example:
+
+```yaml
+- name: Install packages
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nginx
+    - git
+    - curl
+  loop_control:
+    label: "{{ item }}"
+```
+
+This makes task output easier to read.
+
+---
+
+## 18. Loop with Index
+
+Use `index_var` when you need the iteration number.
+
+```yaml
+- name: Display package information
+  ansible.builtin.debug:
+    msg: "Index={{ package_index }}, Package={{ item }}"
+  loop:
+    - nginx
+    - git
+    - curl
+  loop_control:
+    index_var: package_index
+```
+
+Conceptually:
+
+```
+Index=0, Package=nginx
+Index=1, Package=git
+Index=2, Package=curl
+```
+
+---
+
+## 19. `loop_control` with Label
+
+For large dictionaries, output can become difficult to read.
+
+Example:
+
+```yaml
+vars:
+  users:
+    - name: appuser
+      shell: /bin/bash
+    - name: deployuser
+      shell: /bin/bash
+
+tasks:
+
+  - name: Create users
+    ansible.builtin.user:
+      name: "{{ item.name }}"
+      shell: "{{ item.shell }}"
+      state: present
+    loop: "{{ users }}"
+    loop_control:
+      label: "{{ item.name }}"
+```
+
+The output focuses on the username instead of printing the entire dictionary.
+
+---
+
+## 20. Loop with `until`
+
+`until` can be combined with loops, but remember that retry behavior applies to each loop item.
+
+Example:
+
+```yaml
+- name: Check application endpoint
+  ansible.builtin.uri:
+    url: "http://{{ item }}"
+    status_code: 200
+  loop:
+    - app01
+    - app02
+  register: result
+  until: result.status == 200
+  retries: 5
+  delay: 10
+```
+
+Conceptually:
+
+```
+app01
+  |
+  +-- retry until HTTP 200
+
+app02
+  |
+  +-- retry until HTTP 200
+```
+
+---
+
+## 21. Loop with `include_tasks`
+
+Loops can be used with task files.
+
+Main playbook:
+
+```yaml
+- name: Configure applications
+  ansible.builtin.include_tasks: configure_app.yml
+  loop:
+    - app1
+    - app2
+    - app3
+  loop_control:
+    loop_var: app_name
+```
+
+`configure_app.yml`:
+
+```yaml
+- name: Configure application
+  ansible.builtin.debug:
+    msg: "Configuring {{ app_name }}"
+```
+
+This is useful when the same group of tasks must be executed for multiple applications.
+
+---
+
+## 22. Loop with `block`
+
+A block groups multiple tasks.
+
+For example:
+
+```yaml
+- name: Configure application
+  block:
+
+    - name: Create directory
+      ansible.builtin.file:
+        path: "/opt/{{ item }}"
+        state: directory
+
+    - name: Create configuration
+      ansible.builtin.file:
+        path: "/opt/{{ item }}/app.conf"
+        state: touch
+
+  loop:
+    - app1
+    - app2
+    - app3
+```
+
+However, for complex loops over multiple tasks, `include_tasks` is often clearer.
+
+---
+
+## 23. Loop with `when` and Dictionary
+
+```yaml
+vars:
+  applications:
+    - name: app1
+      environment: production
+    - name: app2
+      environment: development
+    - name: app3
+      environment: production
+
+tasks:
+
+  - name: Configure production applications
+    ansible.builtin.debug:
+      msg: "Configuring {{ item.name }}"
+    loop: "{{ applications }}"
+    when: item.environment == "production"
+```
+
+Result:
+
+```
+app1 -> processed
+app2 -> skipped
+app3 -> processed
+```
+
+---
+
+## 24. Loop Through Files
+
+Example:
+
+```yaml
+- name: Find configuration files
+  ansible.builtin.find:
+    paths: /etc/myapp
+    patterns: "*.conf"
+  register: config_files
+
+- name: Display configuration files
+  ansible.builtin.debug:
+    msg: "{{ item.path }}"
+  loop: "{{ config_files.files }}"
+```
+
+Here:
+
+```
+config_files.files
+```
+
+contains a list of dictionaries. Each dictionary contains information about one file.
+
+---
+
+## 25. Loop Through Registered Output
+
+Example:
+
+```yaml
+- name: Get disk usage
+  ansible.builtin.shell:
+    cmd: "df -h"
+  register: disk_output
+
+- name: Display output lines
+  ansible.builtin.debug:
+    msg: "{{ item }}"
+  loop: "{{ disk_output.stdout_lines }}"
+```
+
+`stdout_lines` is a list, so it can be processed using a loop.
+
+---
+
+## 26. Loop with List of Dictionaries
+
+Production-style example:
+
+```yaml
+vars:
+  applications:
+    - name: payment-api
+      port: 8080
+      path: /opt/payment
+    - name: order-api
+      port: 8081
+      path: /opt/order
+    - name: user-api
+      port: 8082
+      path: /opt/user
+
+tasks:
+
+  - name: Create application directories
+    ansible.builtin.file:
+      path: "{{ item.path }}"
+      state: directory
+      mode: "0755"
+    loop: "{{ applications }}"
+```
+
+The loop processes:
+
+```
+payment-api -> /opt/payment
+order-api   -> /opt/order
+user-api    -> /opt/user
+```
+
+---
+
+## 27. Nested Loops
+
+Nested loops mean one loop is executed inside another loop.
+
+Example:
+
+```yaml
+- name: Configure application directories
+  ansible.builtin.include_tasks: configure.yml
+  loop: "{{ applications }}"
+  loop_control:
+    loop_var: application
+```
+
+`configure.yml`:
+
+```yaml
+- name: Create directories
+  ansible.builtin.file:
+    path: "/opt/{{ application }}/{{ item }}"
+    state: directory
+  loop:
+    - logs
+    - config
+    - backup
+```
+
+Result:
+
+```
+app1/logs
+app1/config
+app1/backup
+
+app2/logs
+app2/config
+app2/backup
+```
+
+Using different variable names is important to avoid conflicts between loops.
+
+---
+
+## 28. `loop_var` in Nested Loops
+
+Outer loop:
+
+```yaml
+loop_control:
+  loop_var: application
+```
+
+Inner loop:
+
+```yaml
+loop:
+  - logs
+  - config
+  - backup
+```
+
+Then `{{ application }}` means the outer loop value, and `{{ item }}` means the inner loop value.
+
+Example:
+
+```yaml
+- name: Create directory
+  ansible.builtin.file:
+    path: "/opt/{{ application }}/{{ item }}"
+    state: directory
+  loop:
+    - logs
+    - config
+    - backup
+```
+
+---
+
+## 29. Loop with File Permissions
+
+```yaml
+- name: Set permissions
+  ansible.builtin.file:
+    path: "{{ item }}"
+    mode: "0644"
+  loop:
+    - /etc/myapp/app.conf
+    - /etc/myapp/db.conf
+    - /etc/myapp/cache.conf
+```
+
+---
+
+## 30. Loop with Templates
+
+```yaml
+- name: Deploy application configuration
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/myapp/{{ item }}"
+    owner: root
+    group: root
+    mode: "0644"
+  loop:
+    - app.conf
+    - database.conf
+    - logging.conf
+```
+
+---
+
+## 31. Loop with Handlers
+
+A loop can trigger a handler when a configuration changes.
+
+```yaml
+- name: Deploy configuration files
+  ansible.builtin.template:
+    src: "{{ item }}.j2"
+    dest: "/etc/myapp/{{ item }}"
+  loop:
+    - app.conf
+    - database.conf
+  notify: Restart application
+
+handlers:
+
+  - name: Restart application
+    ansible.builtin.service:
+      name: myapp
+      state: restarted
+```
+
+Important:
+
+```
+Loop task
+    |
+    +-- app.conf changed
+    |
+    +-- database.conf changed
+    |
+    v
+Handler notified
+    |
+    v
+Restart application
+```
+
+Handlers normally run once at the end of the relevant play even if multiple loop iterations notify the same handler.
+
+---
+
+## 32. Loop with `changed_when`
+
+Example:
+
+```yaml
+- name: Check application version
+  ansible.builtin.command:
+    cmd: "/opt/myapp/bin/version"
+  register: version_result
+  changed_when: false
+```
+
+This prevents the command from being reported as changed.
+
+With a loop:
+
+```yaml
+- name: Check versions
+  ansible.builtin.command:
+    cmd: "{{ item }}/bin/version"
+  loop:
+    - /opt/app1
+    - /opt/app2
+  register: versions
+  changed_when: false
+```
+
+---
+
+## 33. Loop with `failed_when`
+
+Example:
+
+```yaml
+- name: Check services
+  ansible.builtin.command:
+    cmd: "systemctl is-active {{ item }}"
+  loop:
+    - nginx
+    - docker
+  register: service_status
+  failed_when: false
+```
+
+This prevents the entire task from failing immediately because one command returns a non-zero status.
+
+For production use, define the failure condition carefully rather than blindly using:
+
+```yaml
+failed_when: false
+```
+
+---
+
+## 34. `with_items` vs `loop`
+
+Older Ansible playbooks often use:
+
+```yaml
+with_items:
+  - nginx
+  - git
+  - curl
+```
+
+Modern Ansible generally prefers:
+
+```yaml
+loop:
+  - nginx
+  - git
+  - curl
+```
+
+| Recommended | Legacy style |
+|---|---|
+| `loop:` | `with_items:` |
+
+For new playbooks, prefer `loop` unless there is a specific reason to use an older `with_*` construct.
+
+---
+
+## 35. Common `with_*` Loop Styles
+
+Older Ansible syntax includes:
+
+```
+with_items:
+with_file:
+with_fileglob:
+with_dict:
+with_subelements:
+with_sequence:
+with_nested:
+with_together:
+```
+
+Modern Ansible commonly uses `loop` together with filters/tests to achieve the same behavior.
+
+Example:
+
+```yaml
+loop: "{{ users }}"
+```
+
+instead of:
+
+```yaml
+with_items: "{{ users }}"
+```
+
+---
+
+## 36. Loop with `dict`
+
+If you have a dictionary:
+
+```yaml
+vars:
+  packages:
+    web: nginx
+    database: postgresql
+    cache: redis
+```
+
+You can convert the dictionary to a list of key/value objects:
+
+```yaml
+- name: Display packages
+  ansible.builtin.debug:
+    msg: "{{ item.key }} = {{ item.value }}"
+  loop: "{{ packages | dict2items }}"
+```
+
+Output:
+
+```
+web = nginx
+database = postgresql
+cache = redis
+```
+
+---
+
+## 37. Loop with `dict2items`
+
+`dict2items` converts:
+
+```yaml
+packages:
+  web: nginx
+  db: postgresql
+```
+
+into conceptually:
+
+```yaml
+- key: web
+  value: nginx
+
+- key: db
+  value: postgresql
+```
+
+Example:
+
+```yaml
+- name: Install packages
+  ansible.builtin.package:
+    name: "{{ item.value }}"
+    state: present
+  loop: "{{ packages | dict2items }}"
+```
+
+---
+
+## 38. Loop with `items2dict`
+
+The reverse operation is `items2dict`.
+
+Example:
+
+```yaml
+vars:
+  package_list:
+    - key: web
+      value: nginx
+    - key: db
+      value: postgresql
+
+tasks:
+
+  - name: Convert list to dictionary
+    ansible.builtin.debug:
+      msg: "{{ package_list | items2dict }}"
+```
+
+---
+
+## 39. Loop with `zip`
+
+When two lists need to be processed together:
+
+```yaml
+vars:
+  users:
+    - appuser
+    - deployuser
+    - backupuser
+
+  shells:
+    - /bin/bash
+    - /bin/bash
+    - /sbin/nologin
+
+tasks:
+
+  - name: Create users
+    ansible.builtin.user:
+      name: "{{ item.0 }}"
+      shell: "{{ item.1 }}"
+      state: present
+    loop: "{{ users | zip(shells) | list }}"
+```
+
+Conceptually:
+
+```
+appuser     -> /bin/bash
+deployuser  -> /bin/bash
+backupuser  -> /sbin/nologin
+```
+
+---
+
+## 40. Loop with `range`
+
+Generate a sequence of numbers:
+
+```yaml
+- name: Display numbers
+  ansible.builtin.debug:
+    msg: "{{ item }}"
+  loop: "{{ range(1, 6) | list }}"
+```
+
+Output:
+
+```
+1
+2
+3
+4
+5
+```
+
+---
+
+## 41. Loop with Conditions Based on Index
+
+```yaml
+- name: Display selected items
+  ansible.builtin.debug:
+    msg: "{{ item }}"
+  loop:
+    - nginx
+    - git
+    - docker
+    - curl
+  loop_control:
+    index_var: index
+  when: index < 2
+```
+
+Only the first two items are processed.
+
+---
+
+## 42. Loop with `default`
+
+If a variable may not exist:
+
+```yaml
+- name: Install packages
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ packages | default([]) }}"
+```
+
+If `packages` is undefined:
+
+```
+packages = []
+```
+
+Therefore, the task has nothing to process instead of failing because the variable is missing.
+
+---
+
+## 43. Loop and Idempotency
+
+Loops do not automatically make a task idempotent. The Ansible module should be idempotent.
+
+Good example:
+
+```yaml
+- name: Ensure users exist
+  ansible.builtin.user:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - appuser
+    - deployuser
+```
+
+Running the playbook repeatedly does not recreate the users.
+
+Similarly:
+
+```yaml
+ansible.builtin.package:
+  name: "{{ item }}"
+  state: present
+```
+
+ensures the desired package state.
+
+---
+
+## 44. Loop vs Shell Script For Loop
+
+Shell:
+
+```bash
+for package in nginx git curl
+do
+    yum install -y "$package"
+done
+```
+
+Ansible:
+
+```yaml
+- name: Install packages
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nginx
+    - git
+    - curl
+```
+
+### Why Ansible is preferable for configuration management
+
+Ansible provides:
+
+```
+Declarative desired state
+        |
+        v
+Idempotency
+        |
+        v
+Change detection
+        |
+        v
+Handlers
+        |
+        v
+Error handling
+        |
+        v
+Check mode / diff
+        |
+        v
+Reusable roles
+```
+
+---
+
+## 45. Production Example
+
+Suppose we need to configure multiple applications.
+
+```yaml
+---
+- name: Configure applications
+  hosts: appservers
+  become: true
+
+  vars:
+    applications:
+      - name: payment-api
+        port: 8080
+        directory: /opt/payment-api
+
+      - name: order-api
+        port: 8081
+        directory: /opt/order-api
+
+      - name: user-api
+        port: 8082
+        directory: /opt/user-api
+
+  tasks:
+
+    - name: Create application directories
+      ansible.builtin.file:
+        path: "{{ item.directory }}"
+        state: directory
+        owner: appuser
+        group: appuser
+        mode: "0755"
+      loop: "{{ applications }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: Display application configuration
+      ansible.builtin.debug:
+        msg: "Application={{ item.name }}, Port={{ item.port }}"
+      loop: "{{ applications }}"
+      loop_control:
+        label: "{{ item.name }}"
+```
+
+This pattern is useful because application configuration is data-driven.
+
+---
+
+## 46. Important Loop Variables
+
+| Variable | Purpose |
+|---|---|
+| `item` | Current loop value |
+| `loop_var` | Custom loop variable name |
+| `index_var` | Stores current index |
+| `ansible_loop` | Extended loop information when enabled |
+| `item.key` | Dictionary key |
+| `item.value` | Dictionary value |
+| `item.name` | Dictionary field named `name` |
+| `item.port` | Dictionary field named `port` |
+
+---
+
+## 47. Extended Loop Information
+
+Ansible can expose additional loop information using:
+
+```yaml
+loop_control:
+  extended: true
+```
+
+Example:
+
+```yaml
+- name: Display loop information
+  ansible.builtin.debug:
+    msg:
+      item: "{{ item }}"
+      index: "{{ ansible_loop.index }}"
+      first: "{{ ansible_loop.first }}"
+      last: "{{ ansible_loop.last }}"
+  loop:
+    - nginx
+    - git
+    - curl
+  loop_control:
+    extended: true
+```
+
+Useful values include:
+
+```
+ansible_loop.index
+ansible_loop.index0
+ansible_loop.revindex
+ansible_loop.revindex0
+ansible_loop.first
+ansible_loop.last
+ansible_loop.length
+```
+
+---
+
+## 48. Common Loop Interview Questions
+
+### Q1. What is a loop in Ansible?
+
+A loop allows us to execute the same task multiple times for different values without duplicating the task definition.
+
+```yaml
+- name: Install packages
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nginx
+    - git
+    - curl
+```
+
+### Q2. What is `item` in Ansible?
+
+`item` is the default variable containing the current value being processed by a loop.
+
+```yaml
+loop:
+  - nginx
+  - git
+  - curl
+```
+
+During execution:
+
+```
+item = nginx
+item = git
+item = curl
+```
+
+### Q3. How do you loop over a dictionary?
+
+Use `dict2items`.
+
+```yaml
+vars:
+  packages:
+    web: nginx
+    db: postgresql
+
+tasks:
+
+  - name: Install packages
+    ansible.builtin.package:
+      name: "{{ item.value }}"
+      state: present
+    loop: "{{ packages | dict2items }}"
+```
+
+### Q4. How do you use conditions with loops?
+
+Use `when`.
+
+```yaml
+- name: Install packages
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nginx
+    - git
+    - docker
+  when: item != "docker"
+```
+
+The condition is evaluated for each loop iteration.
+
+### Q5. How do you avoid item conflicts in nested loops?
+
+Use `loop_control.loop_var`.
+
+```yaml
+loop_control:
+  loop_var: application
+```
+
+Then `{{ application }}` refers to the outer loop value.
+
+### Q6. What is the difference between `loop` and `with_items`?
+
+`with_items` is an older loop syntax. Modern Ansible generally prefers `loop:` because it provides a more consistent loop interface and works well with filters.
+
+### Q7. Can we register the result of a loop?
+
+Yes.
+
+```yaml
+- name: Check services
+  ansible.builtin.command:
+    cmd: "systemctl is-active {{ item }}"
+  loop:
+    - nginx
+    - docker
+  register: service_results
+  failed_when: false
+```
+
+Individual iteration results are available under `service_results.results`.
+
+### Q8. Can a loop be used with `when`?
+
+Yes.
+
+```yaml
+- name: Install packages on RedHat
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nginx
+    - git
+  when: ansible_os_family == "RedHat"
+```
+
+### Q9. How do you access fields inside a loop item?
+
+If the loop item is a dictionary:
+
+```yaml
+loop:
+  - name: app1
+    port: 8080
+```
+
+Use `{{ item.name }}` and `{{ item.port }}`.
+
+### Q10. How do you make loop output easier to read?
+
+Use:
+
+```yaml
+loop_control:
+  label: "{{ item.name }}"
+```
+
+For example:
+
+```yaml
+- name: Configure applications
+  ansible.builtin.debug:
+    msg: "{{ item }}"
+  loop: "{{ applications }}"
+  loop_control:
+    label: "{{ item.name }}"
+```
+
+---
+
+## 49. Loop vs `when`
+
+These solve different problems.
+
+### Loop
+
+Answers: "For which values should this task run?"
+
+```yaml
+loop:
+  - nginx
+  - git
+  - curl
+```
+
+### When
+
+Answers: "Under what condition should this task run?"
+
+```yaml
+when: ansible_os_family == "RedHat"
+```
+
+### Together
+
+```yaml
+- name: Install packages
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nginx
+    - git
+    - curl
+  when: ansible_os_family == "RedHat"
+```
+
+Meaning:
+
+```
+For each package
+       |
+       v
+Check OS
+       |
+       +---- RedHat ---> execute
+       |
+       +---- Other ----> skip
+```
+
+---
+
+## 50. Best Practices
+
+### 1. Prefer `loop`
+
+Use `loop:` for new playbooks.
+
+### 2. Use meaningful loop variables
+
+For nested loops:
+
+```yaml
+loop_control:
+  loop_var: application
+```
+
+instead of relying on multiple `item` variables.
+
+### 3. Keep data separate from tasks
+
+Prefer:
+
+```yaml
+vars:
+  packages:
+    - nginx
+    - git
+    - curl
+```
+
+and:
+
+```yaml
+loop: "{{ packages }}"
+```
+
+instead of hardcoding large lists directly into multiple tasks.
+
+### 4. Use idempotent modules
+
+Prefer:
+
+```
+ansible.builtin.package
+ansible.builtin.user
+ansible.builtin.file
+ansible.builtin.service
+ansible.builtin.template
+```
+
+over repeatedly using `shell` or `command` when a proper Ansible module exists.
+
+### 5. Use `loop_control.label`
+
+For large dictionaries:
+
+```yaml
+loop_control:
+  label: "{{ item.name }}"
+```
+
+This keeps output readable.
+
+### 6. Avoid unnecessary nested loops
+
+If the data structure can be simplified, simplify it. For complex multi-task processing, consider `include_tasks` with a custom `loop_var`.
+
+---
+
+## 51. Quick Memory Trick
+
+```
+loop
+  ↓
+Repeat a task
+
+item
+  ↓
+Current value
+
+item.name
+  ↓
+Field from current dictionary
+
+loop_var
+  ↓
+Custom name instead of item
+
+index_var
+  ↓
+Current index
+
+dict2items
+  ↓
+Dictionary → List
+
+items2dict
+  ↓
+List → Dictionary
+
+when + loop
+  ↓
+Repeat task only when condition is true
+```
+
+---
+
+## 52. Senior-Level Interview Answer
+
+**Question:** How do you use loops in Ansible?
+
+**Answer:** I use Ansible's `loop` to execute the same task against multiple values without duplicating task definitions. For simple lists I use `item`, while for structured data I use dictionaries such as `item.name` or `item.port`. For nested loops I use `loop_control.loop_var` to avoid variable conflicts. I also combine loops with `when`, `register`, `until`, and `loop_control` when required. In production, I prefer data-driven and idempotent modules rather than shell-based loops.
+
+Example:
+
+```yaml
+- name: Create application directories
+  ansible.builtin.file:
+    path: "{{ item.directory }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ applications }}"
+  loop_control:
+    label: "{{ item.name }}"
+```
+
+---
+
+## 53. One-Line Interview Definition
+
+Ansible loop is used to execute the same task repeatedly for multiple values, reducing duplicate tasks and making automation data-driven and maintainable.
 
 ### Common Mistakes
 
