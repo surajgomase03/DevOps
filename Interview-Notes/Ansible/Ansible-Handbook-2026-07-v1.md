@@ -1,27 +1,6 @@
 # Ansible Handbook — 2026-07 — v1
 
 > Written in simple English. Every term is explained before it is used. Read top to bottom once, then use the Cheat Sheet at the end for quick revision.
-
----
-
-## Changelog
-
-**Version 1 | July 2026 | Batch 2 (Interview Question Integration)**
-
-- **Source:** 150+ uploaded interview questions (Core Ansible, Playbooks, Variables/Facts, Roles, Templates, Handlers, Vault, Dynamic Inventory, SSH/Connectivity, Privilege Escalation, Error Handling, Performance, Windows Automation, CI/CD, Real-World Troubleshooting, Senior/Architecture).
-- **Processed per the Interview Question Integration Rule:** each question mapped to its underlying concept, checked against existing Batch 1 content, then either merged into the existing section (full section regenerated, not appended) or added as new.
-- **Existing sections updated (concept merged in, full section regenerated):** Section 2 (control/managed node definitions, connection variables, privilege escalation/`become` vs `sudo`), Section 6 (`command` vs `shell`, `file` vs `copy`, check/diff mode, `--start-at-task`), Section 9 (`set_fact` vs `register`, concrete fact-caching config), Section 13 (`failed_when`, `changed_when`, `until`/`retries`/`delay`, `any_errors_fatal`), Section 15 (`include_role` vs `import_role`), Section 17 (`--ask-vault-pass` vs `--vault-password-file`, Vault decryption troubleshooting), Section 24 (rollback strategy, "works manually but fails in Jenkins"), Section 25 (7 new troubleshooting scenarios: module not found, Python bootstrap, package version drift, mid-deploy failure resilience, config-not-applied, cron execution failures, disk-space failure, segfault, single-host connectivity).
-- **Completely new sections added:** Section 31 (Windows Automation / WinRM), Section 32 (Testing with Molecule, code review/quality gates, enterprise-scale architecture for 1,000+ servers). Cheat Sheet renumbered 31 → 33 to accommodate.
-- **Duplicates skipped (already fully covered in Batch 1, not re-added):** agentless architecture, push vs pull, SSH communication basics, static/dynamic inventory, ad-hoc commands, playbook/YAML basics, modules/collections/Galaxy, variable types/precedence, facts/fact gathering basics, conditionals/loops, tags, handlers (core behavior), block/rescue/always (core behavior), includes vs imports (task-level), role directory structure/dependencies, Jinja2/filters/lookups, Vault basics/Vault IDs, async/polling, delegation/local actions/run_once, serial/rolling updates/strategies/forks, callbacks/plugins/custom modules, shell integration/package/user/service/cron/firewall/SELinux/systemd, Docker/Kubernetes/AWS/Azure/GCP/VMware automation, Jenkins/GitHub Actions/GitLab CI basics, Terraform integration, general logging/debugging, UNREACHABLE/idempotency-drift/undefined-variable/hanging-playbook troubleshooting, best practices/security/project structure, blue-green/canary/rolling/zero-downtime deployment, common errors/mistakes/interview traps, 50 production scenarios, all prior interview question banks.
-- **Processing summary:** 150 questions processed → 2 new concept sections added (Windows Automation; Testing/Enterprise Architecture) → 9 existing sections updated with merged content → ~55 questions skipped as duplicates of Batch 1 concepts → 11 handbook sections modified in total (2, 6, 9, 13, 15, 17, 24, 25, 31 [new], 32 [new], 33 [renumbered/enriched]).
-
-**Version 1 | July 2026 | Batch 1 (Baseline)**
-
-- **Status:** Baseline handbook — first version, no prior handbook to diff against.
-- **Added:** All 31 consolidated sections (mapping the full 102-topic Ansible syllabus) — Introduction & Architecture through Cheat Sheet & One-Page Revision.
-- **Format note:** Intentionally condensed/pointwise across all topics to stay usable as a single file.
-- **Next handbook:** `Ansible-Handbook-2026-08-v2.md` — created only when the month rolls over or you explicitly say "go with version 2."
-
 ---
 
 ## Table of Contents
@@ -367,7 +346,31 @@ Run it with:
 ```bash
 ansible-inventory -i aws_ec2.yml --graph   # shows the discovered groups/hosts as a tree
 ```
+## Static Inventory vs Dynamic Inventory
 
+### Why We Don't Use Dynamic Inventory
+
+- In our environment, servers have **fixed hostnames**.
+- We connect to servers using their **hostnames**.
+- These hostnames are maintained in a **static Ansible inventory file**.
+- Therefore, we don't need dynamic inventory to discover servers automatically.
+
+### Example Static Inventory
+
+```ini
+[webservers]
+web01.company.com
+web02.company.com
+web03.company.com
+
+[appservers]
+app01.company.com
+app02.company.com
+
+[dbservers]
+db01.company.com
+db02.company.com
+```
 ### Inventory Plugins
 
 Inventory plugins are the mechanism dynamic inventory uses — pluggable connectors for different sources: `amazon.aws.aws_ec2`, `azure.azcollection.azure_rm`, `kubernetes.core.k8s`, `community.vmware.vmware_vm_inventory`.
