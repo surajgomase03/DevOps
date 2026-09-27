@@ -155,10 +155,31 @@ Ansible:
 
 ### Interview Questions (Section 1)
 
-- Q: What problem does Ansible solve that manual SSH scripting doesn't?
-  A: Idempotency, consistency across large fleets, and a version-controlled record of every change — manual scripting cannot guarantee any of these reliably at scale.
-- Q: What does "configuration drift" mean and how does Ansible prevent it?
-  A: Drift is when servers that should be identical slowly diverge due to manual, untracked changes. Ansible prevents it by making the playbook the single source of truth, re-applied regularly.
+# What Problem Does Ansible Solve That Manual SSH Scripting Doesn't?
+
+## Short Answer
+
+- Manual SSH scripting can execute commands on multiple servers.
+- But as the environment grows, maintaining **consistent, safe, repeatable, idempotent, and auditable automation** becomes difficult.
+- Ansible provides a structured automation framework around remote execution.
+
+## Q: What does "configuration drift" mean and how does Ansible prevent it?
+- **Configuration drift** means a server's configuration gradually becomes different from the **expected or standardized configuration** over time.
+- This usually happens because of:
+  - Manual changes
+  - Different administrators making different changes
+  - Emergency fixes
+  - Package updates
+  - Configuration changes not documented in code
+  - Different deployment processes
+
+### Example
+Suppose we have 3 web servers that should have the same configuration:
+Expected:
+Nginx installed
+Nginx running
+Port = 8080
+Config version = v2
 
 ---
 
