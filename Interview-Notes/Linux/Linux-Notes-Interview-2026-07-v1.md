@@ -1340,30 +1340,619 @@ faillock --reset --user alice   # unlock
 
 # MODULE 7: PROCESS MANAGEMENT
 
-## 7.1 Process States
+# Linux Process Management: Interview Notes
 
-| State | Symbol | Description |
-|-------|--------|-------------|
-| Running | R | On CPU or in run queue |
-| Sleeping | S | Waiting (interruptible) |
-| Uninterruptible | D | Waiting for I/O — cannot kill, not even SIGKILL |
-| Zombie | Z | Dead, parent not called wait() |
-| Stopped | T | Stopped by SIGSTOP or Ctrl+Z |
-
-## 7.2 Process Lifecycle
+## 1. What Is a Process?
 
 ```
-Parent: fork()
-        │
-        ▼
-   Child created (copy)
-        │
-        ▼ exec() → new program
-        │
-        ├→ exit() + parent wait() = REAPED (normal)
-        ├→ exit() + no parent wait() = ZOMBIE → fix: kill parent
-        └→ parent dies first = ORPHAN → re-parented to PID 1 (systemd)
+Program (file on disk)            Process (running instance)
++------------------+              +-----------------------------+
+| /usr/bin/nginx   |   execute    | PID 2210                    |
+| passive, static  | -----------> | memory, open files, state   |
++------------------+              | CPU registers, environment  |
+                                  +-----------------------------+
 ```
+
+| Term | Meaning |
+|---|---|
+| **Program** | Executable file on disk (static) |
+| **Process** | A running instance of a program (has PID, memory, file descriptors) |
+| **Thread** | Lightweight execution unit inside a process (shares memory) |
+| **Daemon** | Background process with no controlling terminal (e.g., `sshd`, `crond`) |
+| **Job** | A process (or pipeline) managed by the current shell |
+
+**Key points**
+- One program can have many processes (e.g., many `nginx` workers).
+- Each process gets a unique **PID** and knows its parent (**PPID**).
+- Each process has its own virtual address space, file descriptor table, UID/GID, and environment.
+- The kernel tracks each process in a **task_struct**; threads are also tasks that share memory.
+
+---
+
+## 2. Process Attributes
+
+```
++-------------------------------------------+
+| Process                                   |
+|  PID    : 2210        (unique ID)         |
+|  PPID   : 1           (parent)            |
+|  UID/GID: nginx/nginx (owner)             |
+|  State  : S (sleeping)                    |
+|  Nice   : 0           (priority hint)     |
+|  FDs    : 0,1,2,3...  (open files)        |
+|  CWD    : /           (working dir)       |
+|  Env    : PATH, HOME  (environment)       |
++-------------------------------------------+
+```
+
+```bash
+ps -o pid,ppid,user,stat,ni,pcpu,pmem,cmd -p 2210
+cat /proc/2210/status         # detailed info
+ls -l /proc/2210/fd           # open files
+cat /proc/2210/cmdline | tr '\0' ' '
+readlink /proc/2210/cwd       # working directory
+cat /proc/2210/limits         # resource limits
+```
+
+---
+
+## 3. Process Creation: fork() and exec()
+
+```
+   bash (PID 100)
+        |
+        | fork()     -> creates a copy (child)
+        v
+   +----+-----------------------+
+   |                            |
+bash (PID 100)           child (PID 101)
+   |  parent                    | execve("/bin/ls")   -> replaces the process image
+   |                            v
+   | wait()               ls runs (PID 101)
+   |                            | exit(0)
+   |<---------------------------+
+   v
+ next prompt
+```
+
+**Key points**
+- **`fork()`** clones the calling process (child gets a new PID; uses copy-on-write memory).
+- **`exec()`** replaces the process image with a new program (**same PID**).
+- **`wait()`** lets the parent collect the child's exit status.
+- Everything descends from **PID 1** (`systemd`).
+- `fork()` returns **0 in the child** and the **child's PID in the parent**.
+
+**Same idea in Python**
+
+```python
+import os, sys
+
+pid = os.fork()
+
+if pid == 0:
+    # child process
+    os.execvp("ls", ["ls", "-l", "/tmp"])   # replaces child with ls
+else:
+    # parent process
+    _, status = os.waitpid(pid, 0)          # wait for child
+    print(f"child {pid} exited with code {os.WEXITSTATUS(status)}")
+```
+
+```bash
+# Watch it happen
+strace -f -e trace=clone,fork,vfork,execve,wait4 bash -c 'ls'
+```
+
+---
+
+## 4. Process States
+
+```
+                    +---------+
+        fork()      | Running |<-------- scheduler picks it
+   ---------------> |   (R)   |--------> preempted -> back to runnable (R)
+                    +----+----+
+                         |
+          +--------------+---------------+---------------+
+          |              |               |               |
+     waits for I/O   waits for      SIGSTOP/Ctrl+Z    exit()
+     or event        disk I/O            |               |
+          |              |               v               v
+          v              v          +---------+     +---------+
+     +---------+   +-----------+    | Stopped |     | Zombie  |
+     | Sleep   |   | Sleep     |    |   (T)   |     |   (Z)   |
+     |  (S)    |   | uninterr. |    +----+----+     +----+----+
+     +----+----+   |   (D)     |         | SIGCONT       | parent wait()
+          |        +-----+-----+         v               v
+          +--wakeup------+          back to R          removed
+```
+
+| State | Code | Meaning |
+|---|---|---|
+| Running / Runnable | `R` | Running on CPU or waiting in the run queue |
+| Interruptible sleep | `S` | Waiting for an event; can be woken by signals |
+| Uninterruptible sleep | `D` | Waiting on I/O (disk/NFS); **ignores signals** |
+| Stopped | `T` | Paused by SIGSTOP/SIGTSTP (or traced by debugger) |
+| Zombie | `Z` | Finished, but parent has not read exit status |
+| Idle kernel thread | `I` | Idle kernel worker |
+
+**Extra flags in `STAT`:** `s` session leader, `+` foreground, `l` multi-threaded, `<` high priority, `N` low priority.
+
+**Key points**
+- Most processes are in **S** most of the time; that is normal.
+- **D state** = stuck on I/O (bad disk, hung NFS). **`kill -9` does not work** on it.
+- **Zombie** uses no CPU/memory (only a process table slot); it cannot be killed because it is already dead.
+
+```bash
+ps -eo pid,ppid,stat,cmd | awk '$3 ~ /D/'     # find D-state
+ps -eo pid,ppid,stat,cmd | awk '$3 ~ /Z/'     # find zombies
+```
+
+---
+
+## 5. Special Processes: Zombie, Orphan, Daemon
+
+```
+ZOMBIE                              ORPHAN
+child exits                         parent dies first
+   |                                   |
+parent doesn't wait()              child re-parented to PID 1
+   |                                   |
+child stays as <defunct> (Z)       systemd adopts it and reaps it later
+```
+
+| Type | What happened | Fix |
+|---|---|---|
+| **Zombie** | Child exited; parent did not call `wait()` | Fix/restart the **parent**; or `kill -SIGCHLD <parent>` |
+| **Orphan** | Parent exited; child still running | Adopted by PID 1; usually harmless |
+| **Daemon** | Background service, no terminal | Manage with `systemctl` |
+
+**Key points**
+- You cannot `kill` a zombie. Kill/restart its **parent**; then PID 1 reaps it.
+- A few zombies are harmless. **Thousands** can exhaust the PID table.
+- Max PIDs: `cat /proc/sys/kernel/pid_max`.
+
+```bash
+ps -eo pid,ppid,stat,cmd | grep ' Z'
+kill -SIGCHLD <parent_pid>      # ask parent to reap
+kill <parent_pid>               # if parent is buggy, restart it
+```
+
+---
+
+## 6. Viewing Processes
+
+```bash
+# Snapshot
+ps -ef                          # UNIX style (PID, PPID, CMD)
+ps aux                          # BSD style (%CPU, %MEM, STAT)
+ps -ef --forest                 # tree view
+pstree -p                       # tree with PIDs
+ps -eo pid,ppid,user,%cpu,%mem,stat,cmd --sort=-%cpu | head    # top CPU
+ps -eo pid,ppid,user,%cpu,%mem,stat,cmd --sort=-%mem | head    # top memory
+
+# Search
+pgrep nginx                     # PIDs by name
+pgrep -a -u alice python        # with command line, by user
+pidof sshd
+ps -p 1234 -o pid,etime,cmd     # elapsed time of a process
+
+# Live
+top
+htop
+```
+
+**`top` cheat sheet**
+
+| Key | Action |
+|---|---|
+| `P` / `M` | Sort by CPU / memory |
+| `k` | Kill a process |
+| `r` | Renice |
+| `1` | Show per-CPU usage |
+| `c` | Show full command |
+| `H` | Show threads |
+| `q` | Quit |
+
+**Key points**
+- `ps aux` = every process, BSD style. `ps -ef` = every process, UNIX style. Both fine.
+- `%CPU` in `ps` is **lifetime average**; `top` shows the **current** value.
+- `grep nginx` also matches the grep process itself; use `pgrep`.
+
+---
+
+## 7. Understanding `top` Output
+
+```
+top - 10:15:01 up 12 days,  load average: 0.52, 0.80, 1.10
+Tasks: 210 total,   1 running, 208 sleeping,   0 stopped,   1 zombie
+%Cpu(s):  5.0 us,  2.0 sy,  0.0 ni, 92.0 id,  1.0 wa,  0.0 hi,  0.0 si,  0.0 st
+MiB Mem :  7900 total,  1200 free,  3000 used,  3700 buff/cache
+MiB Swap:  2048 total,  2048 free,     0 used.  4500 avail Mem
+```
+
+| Field | Meaning |
+|---|---|
+| `us` | User-space CPU time |
+| `sy` | Kernel-space CPU time |
+| `ni` | CPU for niced processes |
+| `id` | Idle |
+| `wa` | Waiting on I/O (high = disk/NFS bottleneck) |
+| `st` | Stolen by hypervisor (high on VMs = noisy neighbor) |
+| **load average** | Average number of runnable (R) + uninterruptible (D) tasks over 1/5/15 min |
+
+**Key points**
+- **Load average vs CPU count:** on a 4-core machine, load 4.0 = fully used; load 8 = overloaded.
+- Linux load includes **D-state** tasks, so high load with low CPU often means **I/O problems**.
+- Use `available` memory, not `free`.
+
+```bash
+nproc                  # CPU count
+uptime                 # load average
+vmstat 1 5             # r (run queue), b (blocked), si/so (swap), wa
+```
+
+---
+
+## 8. Signals
+
+```
+  kill -15 1234
+      |
+      v
++-----------+   deliver signal    +--------------------+
+|  kernel   | ------------------> | Process 1234       |
++-----------+                     | - default action   |
+                                  | - custom handler   |
+                                  | - or ignore        |
+                                  +--------------------+
+```
+
+| Signal | Number | Default Action | Typical Use |
+|---|---|---|---|
+| `SIGHUP` | 1 | Terminate | Terminal closed; **reload config** for many daemons |
+| `SIGINT` | 2 | Terminate | **Ctrl+C** |
+| `SIGQUIT` | 3 | Core dump | **Ctrl+\\** |
+| `SIGKILL` | 9 | Terminate | **Force kill; cannot be caught/ignored** |
+| `SIGTERM` | 15 | Terminate | **Graceful stop (default of `kill`)** |
+| `SIGCHLD` | 17 | Ignore | Child state changed |
+| `SIGCONT` | 18 | Continue | Resume a stopped process |
+| `SIGSTOP` | 19 | Stop | Pause; **cannot be caught/ignored** |
+| `SIGTSTP` | 20 | Stop | **Ctrl+Z** (can be caught) |
+| `SIGUSR1/2` | 10/12 | Terminate | App-defined (e.g., reopen logs) |
+
+**Key points**
+- **SIGTERM (15)** first: lets the app clean up (flush, close connections).
+- **SIGKILL (9)** last resort: no cleanup, can leave temp files, locks, corrupt data.
+- Only **SIGKILL and SIGSTOP** cannot be caught or ignored.
+- Regular users can signal only their own processes; root can signal any.
+- Signal numbers vary slightly by architecture; use **names** in scripts.
+
+```bash
+kill 1234                  # SIGTERM (default)
+kill -15 1234
+kill -HUP 1234             # reload config (e.g., nginx, sshd)
+kill -9 1234               # force
+kill -STOP 1234; kill -CONT 1234
+kill -0 1234               # test if process exists (sends nothing)
+kill -l                    # list all signals
+
+pkill nginx                # by name
+pkill -f "python app.py"   # match full command line
+pkill -u alice             # all of a user's processes
+killall nginx              # by exact name
+```
+
+**Graceful shutdown handler in a script**
+
+```bash
+#!/bin/bash
+cleanup() {
+    echo "Caught SIGTERM, cleaning up..."
+    rm -f /tmp/myapp.lock
+    exit 0
+}
+trap cleanup SIGTERM SIGINT
+
+echo "Running as PID $$"
+while true; do sleep 1; done
+```
+
+**Same in Python**
+
+```python
+import signal, sys, time
+
+def handler(signum, frame):
+    print("Caught SIGTERM, shutting down cleanly")
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, handler)
+while True:
+    time.sleep(1)
+```
+
+---
+
+## 9. Job Control (Foreground / Background)
+
+```
+command            -> runs in foreground (blocks the terminal)
+command &          -> starts in background
+Ctrl+Z             -> suspend foreground job (SIGTSTP)
+bg %1              -> resume job 1 in background
+fg %1              -> bring job 1 to foreground
+jobs -l            -> list jobs in this shell
+```
+
+```bash
+sleep 300 &                  # background job
+jobs                         # [1]+ Running  sleep 300 &
+fg %1                        # foreground
+# Ctrl+Z to pause
+bg %1                        # continue in background
+
+# Survive logout
+nohup ./script.sh > out.log 2>&1 &
+disown -h %1                 # detach an already-running job from the shell
+setsid ./script.sh &         # new session, fully detached
+```
+
+| Tool | Purpose |
+|---|---|
+| `&` | Run in background (still tied to the terminal; dies on SIGHUP) |
+| `nohup` | Ignore SIGHUP so process survives logout |
+| `disown` | Remove job from the shell's job table |
+| `screen` / `tmux` | Persistent terminal sessions |
+| `systemd` service | Proper way for long-running production services |
+
+**Key points**
+- `&` alone does not protect from logout; use `nohup`, `tmux`, or a systemd service.
+- Job numbers (`%1`) are per shell; PIDs are system-wide.
+
+---
+
+## 10. Priority and Scheduling (nice / renice)
+
+```
+Nice value:  -20 -------------- 0 -------------- +19
+             highest priority     default          lowest priority
+             (greedy)                              (polite)
+```
+
+**Key points**
+- The **CFS scheduler** (newer kernels use EEVDF) shares CPU time fairly among runnable tasks.
+- **Nice value** is a hint to the scheduler: range **-20 to 19**.
+- Normal users can only **increase** nice (lower priority); only **root** can lower it (raise priority).
+- In `top`, `PR = 20 + NI` for normal tasks.
+- Real-time policies (`SCHED_FIFO`, `SCHED_RR`) exist but are risky; they can starve the system.
+- Nice affects **CPU** priority only, not disk I/O (use `ionice` for that).
+
+```bash
+nice -n 10 ./backup.sh                 # start with lower priority
+sudo nice -n -5 ./critical.sh          # higher priority (root)
+renice -n 5 -p 1234                    # change a running process
+sudo renice -n -5 -p 1234
+renice -n 10 -u alice                  # all processes of a user
+
+ionice -c 3 -p 1234                    # idle I/O class
+ionice -c 2 -n 7 ./heavy_io.sh         # best-effort, lowest priority
+
+chrt -p 1234                           # view scheduling policy
+taskset -cp 0,1 1234                   # pin process to CPUs 0 and 1
+```
+
+---
+
+## 11. The /proc Filesystem
+
+```
+/proc
+ |-- 1/                 <- PID 1 (systemd)
+ |-- 2210/              <- one directory per process
+ |     |-- cmdline      command line
+ |     |-- status       state, memory, UID, threads
+ |     |-- fd/          open file descriptors
+ |     |-- environ      environment variables
+ |     |-- limits       ulimit values
+ |     |-- maps         memory map
+ |     |-- cwd, exe     symlinks (working dir, binary)
+ |-- cpuinfo, meminfo, loadavg, uptime
+ |-- sys/               tunable kernel parameters
+```
+
+```bash
+cat /proc/loadavg
+cat /proc/2210/status | egrep 'Name|State|PPid|Threads|VmRSS'
+ls -l /proc/2210/fd | wc -l           # how many FDs open
+readlink /proc/2210/exe               # actual binary (even if deleted)
+cat /proc/2210/environ | tr '\0' '\n'
+```
+
+**Key points**
+- `/proc` is a **virtual filesystem** exposing live kernel and process data (nothing on disk).
+- `ps`, `top`, `lsof` read from `/proc`.
+- A deleted-but-running binary or log can be recovered from `/proc/<pid>/exe` or `/proc/<pid>/fd/N`.
+
+---
+
+## 12. Threads
+
+```
+Process (PID 2210)
++-----------------------------------------+
+| shared: code, heap, open files          |
+|                                         |
+|  Thread 1     Thread 2     Thread 3     |
+|  (own stack)  (own stack)  (own stack)  |
+|  (own regs)   (own regs)   (own regs)   |
++-----------------------------------------+
+```
+
+| | Process | Thread |
+|---|---|---|
+| Memory | Separate address space | Shared with siblings |
+| Creation cost | Higher | Lower |
+| Communication | IPC (pipes, sockets) | Direct shared memory |
+| Isolation | Strong (crash isolated) | Weak (one bug can crash all) |
+
+```bash
+ps -eLf | grep java             # LWP = thread ID, NLWP = thread count
+ls /proc/2210/task              # one dir per thread
+top -H -p 2210                  # threads of a process
+```
+
+**Key points**
+- In Linux, threads are created with `clone()` and scheduled like processes.
+- `NLWP` = number of threads in `ps -eLf`.
+- Python's **GIL** limits CPU-bound threading; use `multiprocessing` for parallel CPU work.
+
+---
+
+## 13. systemd and Process Management
+
+```
+systemd (PID 1)
+   |
+   +-- sshd.service      (cgroup: system.slice/sshd.service)
+   +-- nginx.service     -> master + workers (tracked as a group)
+   +-- myapp.service
+```
+
+```bash
+systemctl status nginx          # state, PID, recent logs
+systemctl start|stop|restart|reload nginx
+systemctl kill -s SIGTERM nginx
+systemctl show nginx -p MainPID
+systemctl list-units --type=service --state=failed
+journalctl -u nginx -f          # follow logs
+systemd-cgls                    # cgroup tree
+systemd-cgtop                   # live resource usage per cgroup
+```
+
+**Sample service unit with restart policy**
+
+```ini
+[Unit]
+Description=My Flask App
+After=network.target
+
+[Service]
+User=appuser
+WorkingDirectory=/opt/myapp
+ExecStart=/opt/myapp/venv/bin/gunicorn -w 4 app:app
+Restart=on-failure
+RestartSec=5
+KillSignal=SIGTERM
+TimeoutStopSec=30
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Key points**
+- systemd tracks all processes of a service via **cgroups**, so `stop` kills the whole group.
+- `reload` sends a config-reload signal (usually SIGHUP); `restart` stops and starts.
+- Prefer `systemctl` over manual `kill` for managed services.
+
+---
+
+## 14. Resource Limits: ulimit and cgroups
+
+```
+ulimit (per process/user)        cgroups (per group of processes)
+ - open files (nofile)            - CPU shares / quota
+ - max processes (nproc)          - memory limit
+ - stack size                     - I/O limits
+                                  - used by systemd, Docker, Kubernetes
+```
+
+```bash
+ulimit -a                       # show limits for the shell
+ulimit -n                       # max open files (common cause of "Too many open files")
+ulimit -n 65535                 # raise (soft) for this shell
+cat /proc/<pid>/limits          # limits of a running process
+
+# Persistent limits
+# /etc/security/limits.conf  or  /etc/security/limits.d/*.conf
+#   appuser  soft  nofile  65535
+#   appuser  hard  nofile  65535
+# For systemd services use:  LimitNOFILE=65535
+
+# cgroup limits via systemd
+sudo systemctl set-property myapp.service MemoryMax=512M CPUQuota=50%
+```
+
+**Key points**
+- `limits.conf` does **not** apply to systemd services; use `LimitNOFILE=` in the unit.
+- Containers = **namespaces** (isolation) + **cgroups** (limits).
+
+---
+
+## 15. OOM Killer
+
+```
+Memory exhausted (RAM + swap)
+        |
+        v
+Kernel OOM killer picks a process (highest oom_score)
+        |
+        v
+SIGKILL -> logged in kernel log
+```
+
+```bash
+dmesg -T | grep -i "killed process"
+journalctl -k | grep -i oom
+cat /proc/<pid>/oom_score
+echo -1000 | sudo tee /proc/<pid>/oom_score_adj     # protect a process
+free -h
+```
+
+**Key points**
+- OOM kills use SIGKILL; the app gets no chance to clean up.
+- In Kubernetes/Docker, exit code **137** = 128 + 9 (SIGKILL), often OOMKilled.
+- Fix root cause: set memory limits, fix leaks, add RAM; don't just disable the OOM killer.
+
+---
+
+## 16. Troubleshooting Playbook
+
+```
+Problem reported
+      |
+      +-- High CPU?      -> top / ps --sort=-%cpu -> strace -p / perf
+      +-- High memory?   -> ps --sort=-%mem -> /proc/PID/status -> OOM logs
+      +-- High load, low CPU? -> vmstat (b, wa) -> D-state -> iostat / NFS
+      +-- Process hung?  -> ps STAT -> strace -p -> lsof -p
+      +-- Can't kill it? -> D state (I/O) or Zombie (kill parent)
+      +-- Too many procs?-> ps -eLf | wc -l -> ulimit -u -> pid_max
+      +-- Port in use?   -> ss -tulpn | grep :PORT
+```
+
+```bash
+# CPU hog
+top -o %CPU
+ps -eo pid,%cpu,cmd --sort=-%cpu | head -5
+
+# What is a hung process doing?
+sudo strace -p 1234                    # live syscalls
+sudo strace -c -p 1234                 # syscall summary (Ctrl+C to stop)
+sudo lsof -p 1234                      # open files/sockets
+cat /proc/1234/stack                   # kernel stack (useful for D state)
+cat /proc/1234/wchan                   # what it's waiting on
+
+# Who is using a file or port?
+lsof /var/log/app.log
+sudo lsof -i :8080
+sudo ss -tulpn | grep 8080
+fuser -v /var/log/app.log              # who has the file open
+fuser -k 8080/tcp                      # kill whoever holds the port
+
+# I/O wait
+vmstat 1 5
+iostat -x 1 3
 
 ## 7.3 Commands
 
@@ -4753,3 +5342,756 @@ PREVENTION:
 *End of Linux-Notes-Interview-2026-07-v1.md*
 *Version: July 2026 | Sources: All chat sessions + Linux_Interview.docx + Master Prompt*
 *Next month: v2 with new unique content only. Cross-references to v1 used instead of repeating.*
+
+# Shell Scripting (Bash): Interview Notes
+
+## 1. What Is a Shell Script?
+
+```
+script.sh (text file)
+     |
+     v
++------------------+   reads line by line   +------------------+
+| Bash interpreter | ---------------------> | commands run as  |
+| (#!/bin/bash)    |                        | processes/syscalls|
++------------------+                        +------------------+
+```
+
+**Key points**
+- A shell script is a text file of commands executed by an interpreter (usually **bash**).
+- Used for automation: deployments, backups, health checks, log cleanup, CI/CD steps, glue between tools.
+- **Shebang** (`#!/bin/bash` or `#!/usr/bin/env bash`) tells the kernel which interpreter to use.
+- Each external command in a script runs as a **new process** (`fork` + `exec`); builtins run inside the shell.
+- Use shell for **glue and automation**; switch to Python when logic gets complex (data structures, APIs, error handling).
+
+```bash
+#!/usr/bin/env bash
+echo "Hello from $(hostname)"
+```
+
+```bash
+chmod +x hello.sh         # make executable
+./hello.sh                # run (uses the shebang)
+bash hello.sh             # run without execute bit
+source hello.sh           # run in the CURRENT shell (also: . hello.sh)
+```
+
+| Run method | New process? | Variables persist in your shell? |
+|---|---|---|
+| `./script.sh` / `bash script.sh` | Yes (child shell) | No |
+| `source script.sh` / `. script.sh` | No | Yes |
+
+---
+
+## 2. Recommended Script Template
+
+```bash
+#!/usr/bin/env bash
+#
+# Description : What this script does
+# Usage       : ./script.sh <arg1> [arg2]
+#
+set -euo pipefail          # strict mode (explained in section 14)
+IFS=$'\n\t'                # safer word splitting
+
+readonly SCRIPT_NAME="$(basename "$0")"
+readonly LOG_FILE="/var/log/${SCRIPT_NAME%.sh}.log"
+
+log()  { echo "$(date '+%F %T') [INFO]  $*" | tee -a "$LOG_FILE"; }
+err()  { echo "$(date '+%F %T') [ERROR] $*" | tee -a "$LOG_FILE" >&2; }
+die()  { err "$*"; exit 1; }
+
+cleanup() { rm -f "${TMP_FILE:-}"; }
+trap cleanup EXIT
+
+main() {
+    [[ $# -ge 1 ]] || die "Usage: $SCRIPT_NAME <arg1>"
+    log "Starting with arg: $1"
+    # ... logic here ...
+    log "Done"
+}
+
+main "$@"
+```
+
+---
+
+## 3. Variables
+
+```bash
+name="Suraj"              # no spaces around =
+echo "$name"              # use $ to read
+echo "${name}_dev"        # braces to separate from text
+readonly PI=3.14          # constant
+unset name                # delete
+export ENV=prod           # visible to child processes
+```
+
+| Type | Scope | Example |
+|---|---|---|
+| Shell variable | Current shell only | `x=1` |
+| Environment variable | Current shell + children | `export x=1` |
+| Local variable | Inside a function | `local x=1` |
+
+**Key points**
+- **No spaces** around `=`: `x = 1` is an error (bash treats `x` as a command).
+- Variables are **strings** by default; arithmetic needs `$(( ))`.
+- Variables are **global by default**, even inside functions; use `local`.
+- Convention: `UPPER_CASE` for env/constants, `lower_case` for local variables.
+
+```bash
+# Default values
+echo "${PORT:-8080}"          # use 8080 if PORT unset or empty
+echo "${PORT:=8080}"          # use AND assign it
+echo "${PORT:?PORT is required}"   # exit with error if unset
+```
+
+---
+
+## 4. Special Variables
+
+| Variable | Meaning |
+|---|---|
+| `$0` | Script name |
+| `$1 ... $9`, `${10}` | Positional arguments |
+| `$#` | Number of arguments |
+| `"$@"` | All arguments, each **preserved separately** (use this) |
+| `"$*"` | All arguments as **one** string |
+| `$?` | Exit status of the last command |
+| `$$` | PID of the current shell/script |
+| `$!` | PID of the last background process |
+| `$_` | Last argument of previous command |
+
+```bash
+#!/usr/bin/env bash
+echo "Script: $0, args: $#"
+for arg in "$@"; do
+    echo "Arg: $arg"
+done
+```
+
+**Key points**
+- Always use **`"$@"`** (quoted) to pass arguments through unchanged.
+- `$?` is overwritten after every command; save it if needed: `rc=$?`.
+
+---
+
+## 5. Quoting (Most Common Source of Bugs)
+
+```
+'single'   -> literal, nothing expanded
+"double"   -> expands $var, $(cmd), \ ; prevents word splitting/globbing
+no quotes  -> word splitting + globbing happen (dangerous with variables)
+```
+
+```bash
+name="John Smith"
+echo '$name'          # $name
+echo "$name"          # John Smith
+echo $name            # John Smith (but split into 2 words internally)
+
+file="my report.txt"
+rm $file              # WRONG: tries to remove "my" and "report.txt"
+rm "$file"            # RIGHT
+```
+
+**Key points**
+- **Always quote variable expansions**: `"$var"`, `"$(cmd)"`, `"$@"`.
+- Unquoted variables undergo **word splitting** and **glob expansion** (`*` matches files).
+- Use `$'...'` for escape sequences: `echo $'line1\nline2'`.
+
+---
+
+## 6. Command Substitution and Arithmetic
+
+```bash
+today=$(date +%F)                     # preferred (nestable)
+files=$(ls | wc -l)
+old=`date`                            # legacy backticks: avoid
+
+count=5
+echo $(( count * 2 + 1 ))             # 11
+(( count++ ))                         # increment
+echo $(( 10 / 3 ))                    # 3 (integer only)
+echo "scale=2; 10/3" | bc             # 3.33 (decimals via bc)
+
+let "x = 5 + 3"
+```
+
+**Key points**
+- Bash arithmetic is **integers only**; use `bc` or `awk` for floats.
+- Inside `$(( ))` you don't need `$` on variable names.
+
+---
+
+## 7. Exit Codes
+
+```
+0        -> success
+1-255    -> failure (meaning is defined by the program)
+```
+
+| Code | Meaning |
+|---|---|
+| `0` | Success |
+| `1` | General error |
+| `2` | Misuse of shell builtin / bad usage |
+| `126` | Command found but not executable |
+| `127` | Command not found |
+| `130` | Terminated by Ctrl+C (128 + 2) |
+| `137` | Killed by SIGKILL (128 + 9), often OOM |
+| `143` | Terminated by SIGTERM (128 + 15) |
+
+```bash
+grep -q "error" app.log
+echo $?                     # 0 if found, 1 if not found
+
+if grep -q "error" app.log; then
+    echo "errors found"
+fi
+
+command || echo "failed"    # run right side only if left FAILS
+command && echo "worked"    # run right side only if left SUCCEEDS
+exit 0                      # explicit exit code
+```
+
+**Key points**
+- `if` tests a command's **exit status**, not a boolean value; **0 = true**.
+- A script's exit code is the exit code of its **last command** unless you call `exit`.
+- CI/CD (Jenkins, GitHub Actions) decides pass/fail from the exit code.
+
+---
+
+## 8. Conditionals
+
+```bash
+if [[ "$env" == "prod" ]]; then
+    echo "production"
+elif [[ "$env" == "stage" ]]; then
+    echo "staging"
+else
+    echo "other"
+fi
+```
+
+### `[ ]` vs `[[ ]]`
+
+| | `[ ]` (test) | `[[ ]]` (bash keyword) |
+|---|---|---|
+| Portability | POSIX (works in `sh`) | Bash/zsh/ksh only |
+| Quoting needed | Yes, always | Safer (no word splitting) |
+| Pattern match | No | `[[ $f == *.log ]]` |
+| Regex | No | `[[ $x =~ ^[0-9]+$ ]]` |
+| `&&` / `\|\|` inside | Use `-a` / `-o` (discouraged) | Yes |
+
+**Recommendation:** use `[[ ]]` in bash scripts; use `[ ]` only for POSIX `sh` scripts.
+
+### Test operators
+
+| String | Meaning |
+|---|---|
+| `-z "$s"` | Empty string |
+| `-n "$s"` | Non-empty string |
+| `"$a" == "$b"` | Equal |
+| `"$a" != "$b"` | Not equal |
+
+| Number | Meaning |
+|---|---|
+| `-eq` `-ne` | Equal, not equal |
+| `-lt` `-le` | Less than, less or equal |
+| `-gt` `-ge` | Greater than, greater or equal |
+
+| File | Meaning |
+|---|---|
+| `-e f` | Exists |
+| `-f f` | Regular file |
+| `-d f` | Directory |
+| `-r` `-w` `-x` | Readable, writable, executable |
+| `-s f` | Exists and size > 0 |
+| `-L f` | Symlink |
+| `f1 -nt f2` | f1 newer than f2 |
+
+```bash
+[[ -f /etc/hosts ]] && echo "exists"
+[[ -d "$dir" ]] || mkdir -p "$dir"
+[[ "$count" -gt 10 && "$env" == "prod" ]] && echo "alert"
+(( count > 10 )) && echo "big"            # arithmetic comparison
+
+[[ "$s" =~ ^[0-9]+$ ]] && echo "number"   # regex
+```
+
+**Key points**
+- **`==` compares strings; `-eq` compares numbers.** `"10" == "010"` is false, `10 -eq 010`... beware (octal in `(( ))`).
+- Spaces are required inside brackets: `[[ $a == $b ]]`, not `[[$a==$b]]`.
+
+### case statement
+
+```bash
+case "$1" in
+    start)   echo "Starting..." ;;
+    stop)    echo "Stopping..." ;;
+    restart) "$0" stop; "$0" start ;;
+    status|st) echo "Status..." ;;
+    *)       echo "Usage: $0 {start|stop|restart|status}"; exit 1 ;;
+esac
+```
+
+---
+
+## 9. Loops
+
+```bash
+# for over a list
+for env in dev stage prod; do
+    echo "Deploying to $env"
+done
+
+# C-style
+for (( i=1; i<=5; i++ )); do echo "$i"; done
+
+# range
+for i in {1..5}; do echo "$i"; done
+
+# over files (use globs, NOT ls)
+for f in /var/log/*.log; do
+    [[ -e "$f" ]] || continue
+    echo "Processing $f"
+done
+
+# while
+count=0
+while [[ $count -lt 3 ]]; do
+    echo "count=$count"
+    (( count++ ))
+done
+
+# read a file line by line (correct way)
+while IFS= read -r line; do
+    echo "Line: $line"
+done < servers.txt
+
+# until
+until ping -c1 -W1 db.internal &>/dev/null; do
+    echo "waiting for db..."
+    sleep 2
+done
+
+# control
+break       # exit loop
+continue    # next iteration
+```
+
+**Key points**
+- Use **`while IFS= read -r line`** to read files; `IFS=` keeps whitespace, `-r` keeps backslashes.
+- **Don't** do `for f in $(ls)`; it breaks on spaces. Use globs or `find ... -print0`.
+- A loop after a pipe runs in a **subshell**: variables set inside are lost.
+
+```bash
+count=0
+cat file | while read -r l; do (( count++ )); done
+echo "$count"     # 0  (subshell problem)
+
+while read -r l; do (( count++ )); done < file
+echo "$count"     # correct (no pipe)
+```
+
+---
+
+## 10. Functions
+
+```bash
+greet() {
+    local name="$1"          # local variable
+    echo "Hello, $name"      # "return" a string via stdout
+    return 0                 # return an exit STATUS (0-255)
+}
+
+msg=$(greet "Suraj")         # capture output
+greet "Suraj"
+echo $?                      # exit status of the function
+
+check_disk() {
+    local usage
+    usage=$(df / --output=pcent | tail -1 | tr -dc '0-9')
+    (( usage < 80 ))         # returns 0 (ok) or 1 (fail)
+}
+
+if check_disk; then echo "disk ok"; else echo "disk high"; fi
+```
+
+**Key points**
+- `return` gives a **status code (0-255)**, not data. To return data, `echo` and capture with `$(...)`.
+- Always use **`local`** for variables inside functions (avoids global leaks).
+- Functions must be defined **before** they are called.
+- Arguments inside a function are `$1`, `$2`, `$@` (the function's own).
+
+---
+
+## 11. Arrays
+
+```bash
+# indexed array
+servers=(web1 web2 db1)
+echo "${servers[0]}"           # web1
+echo "${servers[@]}"           # all elements
+echo "${#servers[@]}"          # length: 3
+servers+=(cache1)              # append
+
+for s in "${servers[@]}"; do echo "$s"; done
+
+# associative array (bash 4+)
+declare -A ports=( [http]=80 [https]=443 [ssh]=22 )
+echo "${ports[https]}"
+for k in "${!ports[@]}"; do echo "$k -> ${ports[$k]}"; done
+```
+
+**Key points**
+- Use **`"${arr[@]}"`** (quoted) to iterate; it preserves elements with spaces.
+- `${!arr[@]}` = keys/indices. `${#arr[@]}` = count.
+- Associative arrays need bash 4+ (macOS default bash 3.2 lacks them).
+
+---
+
+## 12. String Manipulation (Parameter Expansion)
+
+```bash
+s="hello-world.tar.gz"
+
+echo "${#s}"              # length: 17
+echo "${s:0:5}"           # hello       (substring)
+echo "${s#*-}"            # world.tar.gz   (remove shortest prefix up to -)
+echo "${s##*.}"           # gz          (remove longest prefix up to last .)
+echo "${s%.gz}"           # hello-world.tar (remove suffix)
+echo "${s%%.*}"           # hello-world (remove longest suffix from first .)
+echo "${s/world/bash}"    # hello-bash.tar.gz  (replace first)
+echo "${s//l/L}"          # heLLo-worLd.tar.gz (replace all)
+echo "${s^^}"             # UPPERCASE
+echo "${s,,}"             # lowercase
+
+path="/var/log/app/server.log"
+echo "${path##*/}"        # server.log   (like basename)
+echo "${path%/*}"         # /var/log/app (like dirname)
+```
+
+Memory trick: `#` removes from the **front** (# is on the left of $ on keyboard); `%` removes from the **back**. Doubled = longest match.
+
+---
+
+## 13. Input/Output Redirection and Pipes
+
+```
+            +---------+
+ stdin(0) ->| command |-> stdout(1)
+            +---------+-> stderr(2)
+```
+
+| Syntax | Meaning |
+|---|---|
+| `cmd > file` | stdout to file (overwrite) |
+| `cmd >> file` | stdout to file (append) |
+| `cmd 2> file` | stderr to file |
+| `cmd > file 2>&1` | stdout **and** stderr to file |
+| `cmd &> file` | same (bash shortcut) |
+| `cmd 2>&1 \| tee f` | show on screen and save |
+| `cmd < file` | stdin from file |
+| `cmd > /dev/null 2>&1` | discard all output |
+| `cmd1 \| cmd2` | pipe stdout of cmd1 to stdin of cmd2 |
+
+```bash
+ls /nope 2> errors.log
+./deploy.sh > deploy.log 2>&1
+./deploy.sh 2>&1 | tee -a deploy.log
+command >/dev/null 2>&1 || echo "failed"
+echo "error message" >&2            # print to stderr from a script
+```
+
+**Key points**
+- **Order matters:** `cmd > file 2>&1` is correct; `cmd 2>&1 > file` is not (stderr goes to the terminal).
+- Log **errors to stderr** (`>&2`) so callers can separate them.
+
+### Here-doc and here-string
+
+```bash
+cat > /etc/myapp.conf <<EOF
+port=${PORT}
+env=${ENV}
+EOF
+
+cat <<'EOF'                # quoted delimiter: NO variable expansion
+Literal $HOME here
+EOF
+
+grep "error" <<< "$log_text"    # here-string
+```
+
+### Process substitution
+
+```bash
+diff <(sort a.txt) <(sort b.txt)
+```
+
+---
+
+## 14. Strict Mode and Error Handling
+
+```bash
+set -e            # exit immediately if a command fails
+set -u            # error on undefined variables
+set -o pipefail   # pipeline fails if ANY command in it fails
+set -x            # print each command before running (debug)
+
+set -euo pipefail # the standard combo
+```
+
+| Option | Without it | With it |
+|---|---|---|
+| `-e` | Script continues after failure | Stops at first failing command |
+| `-u` | Undefined var = empty string (`rm -rf "$DIR/"` becomes `rm -rf /`!) | Error and exit |
+| `pipefail` | Pipeline status = last command only | Fails if any stage fails |
+
+```bash
+# set -e does NOT trigger inside: if/while conditions, && / || chains, or ! commands
+# Allow an expected failure:
+grep -q pattern file || true
+```
+
+### trap (cleanup and signals)
+
+```bash
+TMP=$(mktemp -d)
+cleanup() { rm -rf "$TMP"; echo "cleaned up"; }
+trap cleanup EXIT                      # runs on any exit
+trap 'echo "Interrupted"; exit 130' INT TERM
+trap 'echo "Error on line $LINENO"' ERR
+```
+
+### Retry pattern
+
+```bash
+retry() {
+    local n=1 max=5 delay=3
+    until "$@"; do
+        if (( n >= max )); then
+            echo "failed after $n attempts" >&2
+            return 1
+        fi
+        echo "attempt $n failed, retrying in ${delay}s..." >&2
+        (( n++ )); sleep "$delay"
+    done
+}
+retry curl -fsS https://example.com/health
+```
+
+### Lock file (prevent concurrent runs)
+
+```bash
+exec 200>/var/lock/myscript.lock
+flock -n 200 || { echo "already running"; exit 1; }
+```
+
+---
+
+## 15. Argument Parsing with getopts
+
+```bash
+#!/usr/bin/env bash
+usage() { echo "Usage: $0 -e <env> [-v] [-n <count>]"; exit 1; }
+
+verbose=false; count=1
+while getopts ":e:vn:h" opt; do
+    case "$opt" in
+        e) env="$OPTARG" ;;
+        v) verbose=true ;;
+        n) count="$OPTARG" ;;
+        h) usage ;;
+        :) echo "Option -$OPTARG needs a value" >&2; usage ;;
+        \?) echo "Invalid option -$OPTARG" >&2; usage ;;
+    esac
+done
+shift $((OPTIND - 1))                  # remaining args are in $@
+
+[[ -n "${env:-}" ]] || usage
+echo "env=$env verbose=$verbose count=$count rest=$*"
+```
+
+```bash
+./deploy.sh -e prod -v -n 3 extra_arg
+```
+
+**Key points**
+- A colon after a letter (`e:`) means the option takes a value.
+- Leading `:` in the optstring enables custom error handling.
+- `getopts` handles short options only; use manual `while/case` loops for `--long` options.
+
+---
+
+## 16. Essential Text-Processing Tools
+
+```
+raw text -> grep (filter) -> sed (edit) -> awk (columns/logic) -> sort | uniq (aggregate)
+```
+
+### grep
+
+```bash
+grep "error" app.log
+grep -i "error" app.log             # ignore case
+grep -v "debug" app.log             # invert
+grep -rn "TODO" /opt/app            # recursive with line numbers
+grep -E "error|fail" app.log        # extended regex
+grep -c "error" app.log             # count matching lines
+grep -q "error" app.log             # quiet, use exit status
+grep -A2 -B2 "Exception" app.log    # context lines
+```
+
+### sed
+
+```bash
+sed 's/old/new/' file               # replace first per line
+sed 's/old/new/g' file              # replace all
+sed -i 's/8080/9090/g' config.conf  # edit in place
+sed -i.bak 's/a/b/' file            # in place + backup
+sed -n '5,10p' file                 # print lines 5-10
+sed '/^#/d' file                    # delete comment lines
+sed '/^$/d' file                    # delete blank lines
+```
+
+### awk
+
+```bash
+awk '{print $1}' file                       # first column
+awk -F: '{print $1, $3}' /etc/passwd        # custom delimiter
+awk '$3 > 1000 {print $1}' /etc/passwd      # condition
+awk '{sum += $2} END {print sum}' data.txt  # sum a column
+awk 'NR==1 || /error/' app.log              # header + matching lines
+```
+
+### cut, sort, uniq, wc, tr, xargs, find
+
+```bash
+cut -d, -f1,3 data.csv
+sort file | uniq -c | sort -nr | head       # frequency count (top values)
+sort -k2 -n file                            # sort by 2nd column, numeric
+wc -l file
+tr 'a-z' 'A-Z' < file
+tr -d '\r' < win.txt > unix.txt             # remove Windows line endings
+
+find /var/log -name "*.log" -mtime +7       # older than 7 days
+find /var/log -name "*.log" -mtime +7 -delete
+find . -type f -size +100M
+find . -name "*.sh" -exec chmod +x {} \;
+find . -name "*.log" -print0 | xargs -0 rm  # safe with spaces
+cat urls.txt | xargs -n1 -P4 curl -sO       # 4 parallel downloads
+```
+
+**Real example: top 5 IPs in an access log**
+
+```bash
+awk '{print $1}' access.log | sort | uniq -c | sort -nr | head -5
+```
+
+**Key points**
+- `sort` before `uniq` (uniq only removes **adjacent** duplicates).
+- `-print0 | xargs -0` handles filenames with spaces.
+- `sed -i` differs on macOS (`sed -i ''`); GNU vs BSD tools behave differently.
+
+---
+
+## 17. Common DevOps Script Examples
+
+### Disk usage alert
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+THRESHOLD=80
+
+df -P | awk 'NR>1 {print $5, $6}' | while read -r usage mount; do
+    pct=${usage%\%}
+    if (( pct >= THRESHOLD )); then
+        echo "ALERT: $mount is at ${pct}% on $(hostname)"
+    fi
+done
+```
+
+### Service health check with restart
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+SERVICE="nginx"
+
+if ! systemctl is-active --quiet "$SERVICE"; then
+    echo "$(date '+%F %T') $SERVICE down, restarting" | tee -a /var/log/healthcheck.log
+    systemctl restart "$SERVICE"
+    sleep 3
+    systemctl is-active --quiet "$SERVICE" || { echo "restart FAILED" >&2; exit 1; }
+fi
+```
+
+### Backup with rotation
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+SRC="/opt/app/data"
+DEST="/backup"
+KEEP_DAYS=7
+STAMP=$(date +%F_%H%M)
+
+mkdir -p "$DEST"
+tar -czf "$DEST/data_${STAMP}.tar.gz" -C "$SRC" .
+find "$DEST" -name "data_*.tar.gz" -mtime +"$KEEP_DAYS" -delete
+echo "Backup complete: data_${STAMP}.tar.gz"
+```
+
+### Run a command on many servers
+
+```bash
+#!/usr/bin/env bash
+while IFS= read -r host; do
+    echo "=== $host ==="
+    ssh -o ConnectTimeout=5 -o BatchMode=yes "$host" "uptime; df -h /" || echo "FAILED: $host"
+done < servers.txt
+```
+
+### Wait for a port/HTTP endpoint
+
+```bash
+wait_for_http() {
+    local url=$1 tries=${2:-30}
+    for (( i=1; i<=tries; i++ )); do
+        if curl -fsS -o /dev/null "$url"; then return 0; fi
+        sleep 2
+    done
+    return 1
+}
+wait_for_http http://localhost:8080/health || { echo "app not healthy"; exit 1; }
+```
+
+### Simple deploy skeleton
+
+```bash
+#!/usr/bin/env bash
+set -euo pipefail
+ENV="${1:?Usage: $0 <env>}"
+
+case "$ENV" in dev|stage|prod) ;; *) echo "invalid env: $ENV" >&2; exit 1 ;; esac
+
+echo "Deploying to $ENV"
+git pull --ff-only
+./build.sh
+systemctl restart myapp
+curl -fsS "http://localhost:8080/health" && echo "Deploy OK"
+```
+
+---
+
+## 18. Scheduling with cron
+
+```
+* * * * *  command
+| | | | |
+| | | | +-- day of week (0-7, Sun=0 or 7)
+| | | +---- month (1-12)
+| | +------ day of m
