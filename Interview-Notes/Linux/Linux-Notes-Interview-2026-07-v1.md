@@ -124,19 +124,43 @@ lscpu            # CPU info
 
 ## 4. Linux Kernel
 
-```
-                 +-------------------------+
-                 |      Linux Kernel       |
-                 +-------------------------+
-                 |  Process Management     |  fork, schedule, kill
-                 |  Memory Management      |  virtual memory, paging
-                 |  File System (VFS)      |  ext4, xfs, nfs...
-                 |  Networking             |  TCP/IP stack
-                 |  Device Drivers         |  disk, NIC, GPU
-                 |  Security               |  permissions, SELinux
-                 |  IPC                    |  pipes, sockets, signals
-                 +-------------------------+
-```
+# Linux Kernel
+
+## What is the Linux Kernel?
+
+The **Linux kernel is the core component of the Linux operating system**.
+
+It acts as a bridge between:
+
+- User applications
+- System resources
+- Hardware
+
+```text
++---------------------------+
+|     User Applications     |
+| bash | nginx | ssh | apps |
++-------------+-------------+
+              |
+              | System Calls
+              ↓
++---------------------------+
+|       Linux Kernel        |
+|---------------------------|
+| Process Management        |
+| Memory Management         |
+| CPU Scheduling            |
+| File System Management    |
+| Device Drivers            |
+| Networking                |
+| Security                  |
++-------------+-------------+
+              |
+              ↓
++---------------------------+
+|          Hardware         |
+| CPU | RAM | Disk | NIC    |
++---------------------------+
 
 | Component | Responsibility |
 |---|---|
