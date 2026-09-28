@@ -5721,84 +5721,762 @@ Trying to use a variable in `import_tasks` filename and being confused why it do
 
 ## 15. Roles
 
-### What is a Role?
+# Ansible Roles
 
-A standard, reusable folder structure that packages tasks, variables, templates, handlers, and files together for one purpose (e.g. "install and configure nginx"), so it can be shared and reused across many playbooks/projects.
+## 1. What is a Role?
 
-### Role Directory Structure
+- A role is a **standard, reusable way to organize Ansible automation** into a fixed directory structure.
+- It bundles tasks, variables, templates, files, and handlers for one purpose (for example `nginx`, `docker`, `monitoring`).
+- Roles keep playbooks **small, clean, and reusable** across projects and teams.
+
+### Without roles vs with roles
+
+```
+Without roles                     With roles
+-------------                     ----------
+One huge playbook                 site.yml (short)
+with 200+ tasks                     |
+                                    +-- role: common
+                                    +-- role: nginx
+                                    +-- role: monitoring
+```
+
+---
+
+## 2. Role Directory Structure
 
 ```
 roles/
   nginx/
     tasks/
-      main.yml        # the main list of tasks for this role
+      main.yml        # main list of tasks (entry point)
     handlers/
-      main.yml        # handlers used by this role
-    templates/
-      nginx.conf.j2    # Jinja2 templates this role uses
-    files/
-      static_file.txt  # static files to copy as-is
-    vars/
-      main.yml         # role-specific variables (high precedence)
+      main.yml        # handlers (restart, reload)
     defaults/
-      main.yml         # default variables (lowest precedence, meant to be overridden)
+      main.yml        # default variables (lowest precedence, easy to override)
+    vars/
+      main.yml        # role variables (high precedence, not meant to be overridden)
+    files/            # static files copied as-is
+    templates/        # Jinja2 templates (.j2)
     meta/
-      main.yml         # role metadata: dependencies on other roles, supported platforms
+      main.yml        # role metadata and dependencies
+    README.md         # documentation
+    tests/            # test playbook / inventory
 ```
 
-### Using a Role in a Playbook
+### What each directory does
+
+| Directory | Purpose |
+|---|---|
+| `tasks/` | Main tasks of the role (`main.yml` is the entry point) |
+| `handlers/` | Handlers used by the role's tasks |
+| `defaults/` | Default variables, lowest precedence, easy to override |
+| `vars/` | Role variables, higher precedence, meant to stay fixed |
+| `files/` | Static files used by `copy` and similar modules |
+| `templates/` | Jinja2 templates used by the `template` module |
+| `meta/` | Role metadata and dependencies |
+| `tests/` | Sample playbook/inventory to test the role |
+
+Only the directories you need are required. In practice, `tasks/main.yml` is the minimum.
+
+---
+
+## 3. Create a Role
+
+Use `ansible-galaxy` to generate the skeleton:
+
+```bash
+ansible-galaxy init nginx
+```
+
+This creates the standard directory structure with placeholder `main.yml` files.
+
+To create it inside a `roles/` directory:
+
+```bash
+ansible-galaxy init roles/nginx
+```
+
+---
+
+## 4. Simple Role Example: `nginx`
+
+### `roles/nginx/tasks/main.yml`
+
+```yaml
+- name: Install nginx
+  ansible.builtin.package:
+    name: nginx
+    state: present
+
+- name: Deploy nginx configuration
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart nginx
+
+- name: Ensure nginx is started and enabled
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true
+```
+
+### `roles/nginx/handlers/main.yml`
+
+```yaml
+- name: Restart nginx
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+```
+
+### `roles/nginx/defaults/main.yml`
+
+```yaml
+nginx_port: 80
+nginx_worker_processes: auto
+```
+
+### `roles/nginx/templates/nginx.conf.j2`
+
+```jinja
+worker_processes {{ nginx_worker_processes }};
+
+events {
+    worker_connections 1024;
+}
+
+http {
+    server {
+        listen {{ nginx_port }};
+        location / {
+            root /usr/share/nginx/html;
+        }
+    }
+}
+```
+
+### Playbook using the role: `site.yml`
+
+```yaml
+- name: Configure web servers
+  hosts: webservers
+  become: true
+
+  roles:
+    - nginx
+```
+
+---
+
+## 5. How Ansible Finds Files Inside a Role
+
+Inside a role, you do not need full paths for role files.
+
+| Module | Looks in |
+|---|---|
+| `template` (`src: nginx.conf.j2`) | `roles/nginx/templates/` |
+| `copy` (`src: app.conf`) | `roles/nginx/files/` |
+| `include_tasks` / `import_tasks` | `roles/nginx/tasks/` |
+
+```yaml
+- name: Deploy config
+  ansible.builtin.template:
+    src: nginx.conf.j2       # found automatically in templates/
+    dest: /etc/nginx/nginx.conf
+```
+
+---
+
+## 6. Ways to Use Roles in a Playbook
+
+### 1. `roles:` section (most common, static)
 
 ```yaml
 - hosts: webservers
   roles:
+    - common
     - nginx
-    - { role: app_deploy, app_version: "2.4.1" }   # pass a variable when including the role
 ```
 
-### Role Dependencies
-
-Declared in `meta/main.yml` — roles that must run before this one.
+### 2. Roles with variables
 
 ```yaml
-# roles/app_deploy/meta/main.yml
-dependencies:
+- hosts: webservers
+  roles:
+    - role: nginx
+      vars:
+        nginx_port: 8080
+```
+
+### 3. Roles with a condition
+
+```yaml
+- hosts: all
+  roles:
+    - role: nginx
+      when: "'webservers' in group_names"
+```
+
+The condition is applied to every task in the role.
+
+### 4. `import_role` (static, in tasks)
+
+```yaml
+- hosts: webservers
+  tasks:
+    - name: Import nginx role
+      ansible.builtin.import_role:
+        name: nginx
+```
+
+### 5. `include_role` (dynamic, in tasks)
+
+```yaml
+- hosts: webservers
+  tasks:
+    - name: Include nginx role
+      ansible.builtin.include_role:
+        name: nginx
+```
+
+---
+
+## 7. `import_role` vs `include_role`
+
+| Feature | `import_role` | `include_role` |
+|---|---|---|
+| Processing | Static (at playbook parse time) | Dynamic (at runtime) |
+| Works with `loop` | No | Yes |
+| Conditional (`when`) | Applied to each task inside | Applied to the include itself |
+| Tags | Applied to all tasks inside | Applied only to the include (unless `apply` is used) |
+| Use when | Fixed, predictable structure | You need loops or runtime decisions |
+
+### `include_role` with a loop
+
+```yaml
+- name: Configure multiple applications
+  ansible.builtin.include_role:
+    name: app_setup
+  loop:
+    - payment-api
+    - order-api
+  loop_control:
+    loop_var: app_name
+```
+
+### Run only part of a role: `tasks_from`
+
+```yaml
+- name: Run only the install tasks
+  ansible.builtin.include_role:
+    name: nginx
+    tasks_from: install.yml
+```
+
+---
+
+## 8. Order of Execution in a Play
+
+```
+pre_tasks
+   |
+   v
+roles
+   |
+   v
+tasks
+   |
+   v
+post_tasks
+   |
+   v
+handlers (after each section)
+```
+
+Roles listed under `roles:` run **before** the `tasks:` section.
+
+---
+
+## 9. Splitting Tasks Inside a Role
+
+Keep `main.yml` small and split logic into multiple files.
+
+```
+roles/nginx/tasks/
+  main.yml
+  install.yml
+  configure.yml
+  service.yml
+```
+
+`roles/nginx/tasks/main.yml`:
+
+```yaml
+- name: Install nginx
+  ansible.builtin.import_tasks: install.yml
+
+- name: Configure nginx
+  ansible.builtin.import_tasks: configure.yml
+
+- name: Manage nginx service
+  ansible.builtin.import_tasks: service.yml
+```
+
+---
+
+## 10. `defaults` vs `vars`
+
+| Feature | `defaults/main.yml` | `vars/main.yml` |
+|---|---|---|
+| Precedence | Lowest | High |
+| Purpose | Values users are expected to override | Internal constants of the role |
+| Easy to override from playbook/inventory | Yes | No (hard to override) |
+
+```
+defaults/main.yml  -> "Here are my defaults, change them if you want."
+vars/main.yml      -> "These are internal values, please leave them alone."
+```
+
+Command-line extra variables (`-e`) override almost everything.
+
+### Example
+
+`defaults/main.yml`:
+
+```yaml
+nginx_port: 80
+```
+
+Override in the playbook:
+
+```yaml
+roles:
   - role: nginx
-  - role: common_security_hardening
+    vars:
+      nginx_port: 8080
 ```
 
-### Real Production Example
-
-CMG-style enterprise setup: a `common` role (security hardening, user management, base packages) applied to every server, plus service-specific roles (`webserver_config`, `siebel_agent`) applied only where relevant — keeping shared logic in one place instead of duplicated across playbooks.
-
-### Advantages / Disadvantages
-
-| Advantages | Disadvantages |
-|---|---|
-| Reusable across many playbooks/projects | Adds directory structure overhead for very small, one-off tasks |
-| Easy to share via Ansible Galaxy | Can become over-engineered for simple use cases |
-| Clear separation of concerns | Debugging a deep role-dependency chain can be harder to trace |
-
-### `include_role` vs `import_role` (Same Static/Dynamic Split as Section 14)
-
-Exactly the same static-vs-dynamic distinction as `import_tasks` vs `include_tasks` (Section 14), applied to whole roles:
+Or in inventory group vars:
 
 ```yaml
-tasks:
-  - import_role:                       # static — resolved before the play starts, role name must be fixed
-      name: common
-
-  - include_role:                       # dynamic — resolved at run time, can use a variable
-      name: "{{ os_family_role }}"
-    when: needs_os_specific_setup
+nginx_port: 8080
 ```
-- Use `import_role` for roles that should always run (visible to `--list-tasks`/tags ahead of time).
-- Use `include_role` when the role to run depends on a runtime variable/condition — e.g. picking `RedHat_hardening` vs `Debian_hardening` based on a fact gathered at run time.
 
-### Common Mistakes
+---
 
-- Not using `defaults/main.yml` for overridable settings, hardcoding values in `tasks/main.yml` instead.
-- Circular role dependencies (Role A depends on Role B which depends on Role A).
-- Trying to use a runtime variable in `import_role`'s `name`, not realizing it needs `include_role` for that (same trap as `import_tasks`).
+## 11. Role Variable Naming Best Practice
+
+Prefix variables with the role name to avoid conflicts.
+
+```yaml
+# Good
+nginx_port: 80
+nginx_worker_processes: auto
+
+# Risky (may collide with other roles)
+port: 80
+workers: auto
+```
+
+---
+
+## 12. Role Dependencies (`meta/main.yml`)
+
+A role can depend on other roles. Dependencies run **before** the role.
+
+`roles/webapp/meta/main.yml`:
+
+```yaml
+dependencies:
+  - role: common
+  - role: nginx
+    vars:
+      nginx_port: 8080
+```
+
+```
+common  ->  nginx  ->  webapp
+```
+
+Notes:
+
+- A dependent role normally runs only once, even if several roles depend on it (unless `allow_duplicates: true`).
+- Keep dependencies minimal to avoid hidden coupling.
+
+### Role metadata
+
+```yaml
+galaxy_info:
+  author: your_name
+  description: Installs and configures nginx
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions:
+        - "8"
+        - "9"
+
+dependencies: []
+```
+
+---
+
+## 13. Handlers in Roles
+
+Handlers are stored in `handlers/main.yml` and notified from the role's tasks by name.
+
+```yaml
+# tasks/main.yml
+- name: Deploy config
+  ansible.builtin.template:
+    src: app.conf.j2
+    dest: /etc/myapp/app.conf
+  notify: Restart myapp
+```
+
+```yaml
+# handlers/main.yml
+- name: Restart myapp
+  ansible.builtin.service:
+    name: myapp
+    state: restarted
+```
+
+---
+
+## 14. Multiple Roles in One Playbook
+
+```yaml
+- name: Configure application servers
+  hosts: appservers
+  become: true
+
+  roles:
+    - common
+    - role: docker
+    - role: monitoring
+      vars:
+        monitoring_port: 9100
+    - role: app_deploy
+      when: deploy_enabled | default(true)
+```
+
+---
+
+## 15. Role Tags
+
+```yaml
+roles:
+  - role: nginx
+    tags: web
+  - role: monitoring
+    tags: monitoring
+```
+
+Run only one role:
+
+```bash
+ansible-playbook site.yml --tags web
+```
+
+---
+
+## 16. Where Ansible Looks for Roles
+
+Ansible searches in this order (roughly):
+
+1. `roles/` directory next to the playbook
+2. Paths defined in `roles_path` in `ansible.cfg`
+3. Default user/system role locations (for example `~/.ansible/roles`)
+
+`ansible.cfg` example:
+
+```ini
+[defaults]
+roles_path = ./roles:~/.ansible/roles
+```
+
+---
+
+## 17. Ansible Galaxy
+
+Ansible Galaxy is a hub for sharing roles and collections.
+
+### Install a role
+
+```bash
+ansible-galaxy role install geerlingguy.nginx
+```
+
+### Install from a requirements file
+
+`requirements.yml`:
+
+```yaml
+roles:
+  - name: geerlingguy.nginx
+    version: "3.2.0"
+
+collections:
+  - name: community.general
+```
+
+```bash
+ansible-galaxy role install -r requirements.yml
+ansible-galaxy collection install -r requirements.yml
+```
+
+### Useful commands
+
+```bash
+ansible-galaxy init myrole                 # create a role skeleton
+ansible-galaxy role list                   # list installed roles
+ansible-galaxy role remove geerlingguy.nginx
+```
+
+---
+
+## 18. Roles vs Collections
+
+| Item | Purpose |
+|---|---|
+| Role | Reusable automation for a specific purpose |
+| Collection | A package that can contain roles, modules, plugins, and playbooks |
+
+Collections use a fully qualified name such as `community.general.ufw` or `ansible.builtin.package`.
+
+---
+
+## 19. Testing Roles
+
+- Use `ansible-playbook --syntax-check` for syntax.
+- Use `ansible-lint` for best practices.
+- Use `--check --diff` for a dry run.
+- Use **Molecule** for automated role testing (commonly with Docker/Podman).
+
+```bash
+ansible-playbook site.yml --syntax-check
+ansible-lint roles/nginx
+molecule test
+```
+
+---
+
+## 20. Real DevOps Project Layout
+
+```
+ansible-project/
+  ansible.cfg
+  inventory/
+    production/
+      hosts.ini
+      group_vars/
+        all.yml
+        webservers.yml
+    staging/
+      hosts.ini
+  site.yml
+  webservers.yml
+  roles/
+    common/
+    nginx/
+    docker/
+    monitoring/
+  requirements.yml
+```
+
+`site.yml`:
+
+```yaml
+- import_playbook: webservers.yml
+```
+
+`webservers.yml`:
+
+```yaml
+- name: Configure web servers
+  hosts: webservers
+  become: true
+
+  roles:
+    - common
+    - nginx
+    - monitoring
+```
+
+---
+
+## 21. Important Syntax Rules
+
+### Role name in `roles:` must match the directory name
+
+```yaml
+roles:
+  - nginx        # looks for roles/nginx/
+```
+
+### Role variables use `vars:` under the role entry
+
+```yaml
+roles:
+  - role: nginx
+    vars:
+      nginx_port: 8080
+```
+
+### `tasks/main.yml` is a plain list of tasks (no `tasks:` key)
+
+```yaml
+# correct: roles/nginx/tasks/main.yml
+- name: Install nginx
+  ansible.builtin.package:
+    name: nginx
+    state: present
+```
+
+```yaml
+# wrong
+tasks:
+  - name: Install nginx
+    ...
+```
+
+### `handlers/main.yml` is also a plain list
+
+```yaml
+- name: Restart nginx
+  ansible.builtin.service:
+    name: nginx
+    state: restarted
+```
+
+### `when` on a role applies to all tasks in the role
+
+### Avoid `environment` as a custom variable name
+
+It is a reserved Ansible keyword. Use `env_name` instead.
+
+---
+
+## 22. Common Mistakes
+
+- Putting user-overridable values in `vars/` instead of `defaults/` (they become hard to override).
+- Using generic variable names without a role prefix, causing collisions.
+- Writing `tasks:` inside `tasks/main.yml` (it must be a plain list).
+- Putting too much logic in one `main.yml` instead of splitting into files.
+- Creating many hidden role dependencies that are hard to trace.
+- Mixing `import_role` and `include_role` without understanding static vs dynamic behavior.
+- Hardcoding environment-specific values in the role instead of using variables.
+
+---
+
+## 23. Common Interview Questions
+
+### Q1. What is an Ansible role?
+
+A role is a structured, reusable unit of automation that groups tasks, handlers, variables, templates, and files for a specific purpose.
+
+### Q2. Why use roles?
+
+Reusability, better organization, easier maintenance, team collaboration, and cleaner playbooks.
+
+### Q3. What is the minimum required in a role?
+
+Typically just `tasks/main.yml`.
+
+### Q4. Difference between `defaults` and `vars` in a role?
+
+`defaults` has the lowest precedence and is meant to be overridden. `vars` has higher precedence and is meant for internal, fixed values.
+
+### Q5. Difference between `import_role` and `include_role`?
+
+`import_role` is static (processed at parse time). `include_role` is dynamic (processed at runtime) and supports loops.
+
+### Q6. How do you pass variables to a role?
+
+Use `vars:` under the role entry, inventory/group variables, or extra variables (`-e`).
+
+### Q7. How do you create a role?
+
+`ansible-galaxy init role_name`
+
+### Q8. What is `meta/main.yml` used for?
+
+Role metadata and role dependencies.
+
+### Q9. What is Ansible Galaxy?
+
+A hub for sharing and downloading roles and collections.
+
+### Q10. In what order do roles run relative to tasks?
+
+`pre_tasks`, then `roles`, then `tasks`, then `post_tasks`.
+
+### Q11. How do you run only a part of a role?
+
+Use tags, or `include_role` with `tasks_from`.
+
+### Q12. How do you test roles?
+
+Syntax check, `ansible-lint`, `--check --diff`, and Molecule.
+
+---
+
+## 24. Quick Revision
+
+```
+tasks/      -> main logic (main.yml)
+handlers/   -> restart/reload handlers
+defaults/   -> overridable variables (lowest precedence)
+vars/       -> fixed role variables (higher precedence)
+files/      -> static files (copy)
+templates/  -> Jinja2 templates (template)
+meta/       -> metadata and dependencies
+tests/      -> test playbook
+```
+
+```bash
+ansible-galaxy init myrole
+ansible-galaxy role install -r requirements.yml
+ansible-playbook site.yml --tags web
+```
+
+```yaml
+roles:
+  - common
+  - role: nginx
+    vars:
+      nginx_port: 8080
+
+- ansible.builtin.import_role:
+    name: nginx          # static
+
+- ansible.builtin.include_role:
+    name: nginx          # dynamic (supports loop)
+    tasks_from: install.yml
+```
+
+### Memory Trick
+
+```
+Role = reusable package of automation
+defaults = "change me"
+vars     = "don't touch"
+import   = static
+include  = dynamic
+```
+
+---
+
+## 25. Interview Answer
+
+An Ansible role is a standard, reusable way to organize automation. It has a fixed directory structure with tasks, handlers, defaults, vars, files, templates, and meta. I use roles to keep playbooks small and reusable, for example separate roles for common setup, nginx, and monitoring. I put overridable values in `defaults`, prefix variable names with the role name, and use `import_role` for static inclusion or `include_role` when I need loops or runtime decisions. I create roles with `ansible-galaxy init`, manage external roles with `requirements.yml`, and test them with `ansible-lint` and Molecule.
 
 ### Interview Questions (Section 15)
 
