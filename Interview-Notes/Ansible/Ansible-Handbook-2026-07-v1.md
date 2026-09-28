@@ -6493,41 +6493,292 @@ An Ansible role is a standard, reusable way to organize automation. It has a fix
 
 ### Templates
 
-The `template` module copies a file to the target server, replacing placeholders with real variable values — used for any config file that needs to differ per environment/host.
-
-```jinja
-# templates/nginx.conf.j2
-server {
-    listen {{ http_port }};
-    server_name {{ ansible_facts['hostname'] }};
-    root {{ app_root_path }};
-}
+# Part 1: Templates
+ 
+## 1. What is a Template?
+ 
+- A template is a **text file with variables and logic** that Ansible renders into a final file on the target host.
+- Templates use the **Jinja2** templating engine.
+- Template files usually have a `.j2` extension.
+- Rendering happens on the **control node**; the finished file is copied to the managed host.
 ```
+nginx.conf.j2  +  variables/facts
+        |
+        v
+   Jinja2 renders
+        |
+        v
+final nginx.conf on the target host
+```
+ 
+---
+ 
+## 2. The `template` Module
+ 
 ```yaml
-- name: Deploy nginx config from template
-  template:
+- name: Deploy nginx configuration
+  ansible.builtin.template:
     src: nginx.conf.j2
-    dest: /etc/nginx/sites-available/app.conf
+    dest: /etc/nginx/nginx.conf
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+    validate: nginx -t -c %s
   notify: Restart nginx
 ```
-
-### Jinja2 (The Templating Language Behind Templates and Variables)
-
-`{{ }}` inserts a variable's value. `{% %}` is used for logic (loops, conditionals) inside a template.
-
+ 
+| Parameter | Purpose |
+|---|---|
+| `src` | Template file (`.j2`) on the control node |
+| `dest` | Destination path on the managed host |
+| `owner` / `group` / `mode` | Ownership and permissions |
+| `backup` | Keep a timestamped backup of the old file |
+| `validate` | Validate the rendered file before replacing (`%s` = temp file) |
+ 
+### Where Ansible looks for `src`
+ 
+- In a role: `roles/<role>/templates/`
+- Otherwise: `templates/` next to the playbook, or the playbook directory itself
+### `template` vs `copy`
+ 
+| Module | Use when |
+|---|---|
+| `copy` | Static file, no variables |
+| `template` | File contains variables or logic |
+ 
+---
+ 
+## 3. Simple Template Example
+ 
+`app.conf.j2`:
+ 
 ```jinja
-{% if is_production %}
-worker_processes auto;
-{% else %}
-worker_processes 1;
-{% endif %}
-
-upstream backend {
-{% for server in backend_servers %}
-    server {{ server }};
-{% endfor %}
-}
+# {{ ansible_managed }}
+server_name = {{ inventory_hostname }}
+port = {{ app_port }}
+environment = {{ env_name }}
 ```
+ 
+Variables:
+ 
+```yaml
+app_port: 8080
+env_name: production
+```
+ 
+Rendered output on `web01`:
+ 
+```
+# Ansible managed
+server_name = web01
+port = 8080
+environment = production
+```
+ 
+`ansible_managed` inserts a "managed by Ansible" comment so people know not to edit the file by hand.
+ 
+---
+ 
+# Part 2: Jinja2 Basics
+ 
+## 4. The Three Jinja2 Delimiters
+ 
+| Syntax | Purpose | Example |
+|---|---|---|
+| `{{ ... }}` | Print an expression or variable | `{{ app_port }}` |
+| `{% ... %}` | Statements (if, for, set) | `{% if enable_ssl %}` |
+| `{# ... #}` | Comments (not in output) | `{# this is a comment #}` |
+ 
+---
+ 
+## 5. Variables and Dictionary Access
+ 
+```jinja
+{{ app_name }}
+{{ user.name }}
+{{ user['name'] }}
+{{ servers[0] }}
+{{ ansible_default_ipv4.address }}
+```
+ 
+---
+ 
+## 6. Conditionals in Templates
+ 
+```jinja
+{% if enable_ssl %}
+listen 443 ssl;
+{% else %}
+listen 80;
+{% endif %}
+```
+ 
+With `elif`:
+ 
+```jinja
+{% if env_name == "production" %}
+log_level = error
+{% elif env_name == "staging" %}
+log_level = warn
+{% else %}
+log_level = debug
+{% endif %}
+```
+ 
+### Inline `if`
+ 
+```jinja
+log_level = {{ 'error' if env_name == 'production' else 'debug' }}
+```
+ 
+---
+ 
+## 7. Loops in Templates
+ 
+```jinja
+{% for server in backend_servers %}
+server {{ server }};
+{% endfor %}
+```
+ 
+Variables:
+ 
+```yaml
+backend_servers:
+  - 10.0.0.11
+  - 10.0.0.12
+```
+ 
+Output:
+ 
+```
+server 10.0.0.11;
+server 10.0.0.12;
+```
+ 
+### Loop over a dictionary list
+ 
+```jinja
+{% for app in applications %}
+{{ app.name }} = {{ app.port }}
+{% endfor %}
+```
+ 
+### Loop over a dictionary
+ 
+```jinja
+{% for key, value in settings.items() %}
+{{ key }} = {{ value }}
+{% endfor %}
+```
+ 
+### Special `loop` variables
+ 
+| Variable | Meaning |
+|---|---|
+| `loop.index` | Current iteration (starts at 1) |
+| `loop.index0` | Current iteration (starts at 0) |
+| `loop.first` | True on the first iteration |
+| `loop.last` | True on the last iteration |
+| `loop.length` | Total number of items |
+ 
+```jinja
+{% for server in backend_servers %}
+{{ server }}{% if not loop.last %},{% endif %}
+{% endfor %}
+```
+ 
+---
+ 
+## 8. Set Variables Inside a Template
+ 
+```jinja
+{% set max_conn = 100 %}
+max_connections = {{ max_conn }}
+```
+ 
+---
+ 
+## 9. Loop Over Inventory Hosts
+ 
+```jinja
+{% for host in groups['webservers'] %}
+server {{ hostvars[host]['ansible_default_ipv4']['address'] }};
+{% endfor %}
+```
+ 
+- `groups['webservers']` lists hosts in the group.
+- `hostvars[host]` accesses another host's variables and facts.
+- Facts must already be gathered for those hosts.
+### Example: `/etc/hosts` template
+ 
+```jinja
+127.0.0.1 localhost
+{% for host in groups['all'] %}
+{{ hostvars[host]['ansible_default_ipv4']['address'] }} {{ host }}
+{% endfor %}
+```
+ 
+---
+ 
+## 10. Whitespace Control
+ 
+Use `-` to strip whitespace and blank lines.
+ 
+```jinja
+{% for server in backend_servers -%}
+server {{ server }};
+{% endfor -%}
+```
+ 
+| Syntax | Effect |
+|---|---|
+| `{%- ... %}` | Strip whitespace before the tag |
+| `{% ... -%}` | Strip whitespace after the tag |
+ 
+Ansible's template module enables `trim_blocks` by default (removes the first newline after a block tag).
+ 
+---
+ 
+## 11. Escape Jinja2 Syntax: `raw`
+ 
+If you need literal `{{ }}` in output (for example, Prometheus or Helm templates):
+ 
+```jinja
+{% raw %}
+{{ $labels.instance }}
+{% endraw %}
+```
+ 
+---
+ 
+## 12. Tests in Jinja2
+ 
+Use `is` for tests.
+ 
+```jinja
+{% if app_version is defined %}
+version = {{ app_version }}
+{% endif %}
+```
+ 
+Common tests:
+ 
+```
+is defined
+is not defined
+is string
+is number
+is iterable
+is mapping
+is even / is odd
+is match('regex')
+is search('regex')
+```
+ 
+---
+ 
 
 ### Filters
 
