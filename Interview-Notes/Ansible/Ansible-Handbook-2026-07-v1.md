@@ -4653,7 +4653,593 @@ Handlers are tasks that run only when notified by another task that made a chang
 
 ---
 
-## 13. Blocks & Error Handling
+# Ansible Blocks & Error Handling
+
+## 1. What is a Block?
+
+- A `block` **groups multiple tasks together**.
+- Directives applied to the block (like `when`, `become`, `vars`, `tags`) apply to **every task inside it**.
+- Blocks also provide **error handling** through `rescue` and `always` sections.
+
+### Basic Syntax
+
+```yaml
+- name: Install and start nginx
+  block:
+    - name: Install nginx
+      ansible.builtin.package:
+        name: nginx
+        state: present
+
+    - name: Start nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+```
+
+---
+
+## 2. Apply a Directive to Many Tasks at Once
+
+Instead of repeating `when` and `become` on every task:
+
+```yaml
+- name: Production web configuration
+  block:
+    - name: Install nginx
+      ansible.builtin.package:
+        name: nginx
+        state: present
+
+    - name: Start nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+  when: env_name == "production"
+  become: true
+```
+
+Common block-level keywords:
+
+```
+when
+become / become_user
+vars
+tags
+environment
+ignore_errors
+any_errors_fatal
+```
+
+---
+
+## 3. `block`, `rescue`, `always`
+
+This works like try / catch / finally.
+
+```
+block   -> try
+rescue  -> catch (runs only if a task in block fails)
+always  -> finally (runs no matter what)
+```
+
+```yaml
+- name: Deploy application
+  block:
+    - name: Deploy new version
+      ansible.builtin.command: /opt/app/deploy.sh
+
+    - name: Verify deployment
+      ansible.builtin.uri:
+        url: http://localhost:8080/health
+        status_code: 200
+
+  rescue:
+    - name: Rollback to previous version
+      ansible.builtin.command: /opt/app/rollback.sh
+
+  always:
+    - name: Write deployment log
+      ansible.builtin.lineinfile:
+        path: /var/log/deploy.log
+        line: "Deployment attempt finished on {{ inventory_hostname }}"
+        create: true
+```
+
+### Flow
+
+```
+Run block tasks
+      |
+      +---- all succeed ---------> skip rescue ----> run always
+      |
+      +---- a task fails --------> run rescue -----> run always
+```
+
+---
+
+## 4. Rules for `rescue`
+
+- `rescue` runs **only if a task in the block fails**.
+- Tasks after the failed task in the block are **skipped**; control jumps to `rescue`.
+- If `rescue` completes successfully, the host is **not marked as failed** and the play continues. The recap shows it as **rescued**.
+- If a task in `rescue` also fails, the host is marked failed.
+- `rescue` requires a `block` (you cannot use it alone).
+
+---
+
+## 5. Rules for `always`
+
+- `always` runs **whether the block succeeded, failed, or was rescued**.
+- Use it for cleanup, notifications, or logging.
+
+```yaml
+- name: Work with temporary files
+  block:
+    - name: Create temp file
+      ansible.builtin.file:
+        path: /tmp/work.tmp
+        state: touch
+
+    - name: Run processing
+      ansible.builtin.command: /opt/app/process.sh /tmp/work.tmp
+
+  always:
+    - name: Remove temp file
+      ansible.builtin.file:
+        path: /tmp/work.tmp
+        state: absent
+```
+
+---
+
+## 6. Special Variables in `rescue`
+
+Inside `rescue`, Ansible provides information about the failure.
+
+| Variable | Meaning |
+|---|---|
+| `ansible_failed_task` | Details of the task that failed (for example `.name`) |
+| `ansible_failed_result` | The result returned by the failed task (for example `.msg`) |
+
+```yaml
+rescue:
+  - name: Show failure details
+    ansible.builtin.debug:
+      msg: >
+        Task '{{ ansible_failed_task.name }}' failed:
+        {{ ansible_failed_result.msg | default('no message') }}
+```
+
+---
+
+## 7. `ignore_errors`
+
+Continue the play even if a task fails.
+
+```yaml
+- name: Stop old service (may not exist)
+  ansible.builtin.service:
+    name: legacyapp
+    state: stopped
+  ignore_errors: true
+```
+
+- The task is still shown as **failed**, but the play continues.
+- It does **not** ignore unreachable hosts (use `ignore_unreachable`).
+- Use it carefully. Prefer `failed_when` or `rescue` when you know exactly what is acceptable.
+
+### With a block
+
+```yaml
+- name: Optional cleanup steps
+  block:
+    - name: Remove old file
+      ansible.builtin.file:
+        path: /tmp/old.log
+        state: absent
+
+    - name: Remove old directory
+      ansible.builtin.file:
+        path: /tmp/olddir
+        state: absent
+
+  ignore_errors: true
+```
+
+---
+
+## 8. `ignore_unreachable`
+
+If a host cannot be reached, Ansible normally removes it from the play.
+
+```yaml
+- name: Try to contact host
+  ansible.builtin.ping:
+  ignore_unreachable: true
+```
+
+---
+
+## 9. `failed_when`
+
+Define your own failure condition.
+
+```yaml
+- name: Run health check
+  ansible.builtin.command: /opt/app/healthcheck.sh
+  register: health
+  failed_when: "'ERROR' in health.stdout"
+```
+
+The task fails only if the output contains `ERROR`, regardless of the return code.
+
+### Fail on non-zero return code (custom)
+
+```yaml
+failed_when: health.rc not in [0, 2]
+```
+
+Meaning: return codes 0 and 2 are acceptable; anything else fails.
+
+---
+
+## 10. `changed_when`
+
+Control whether a task is reported as changed.
+
+```yaml
+- name: Check application version
+  ansible.builtin.command: /opt/app/version.sh
+  register: version
+  changed_when: false
+```
+
+Useful for read-only commands so they don't trigger handlers or show as changed.
+
+---
+
+## 11. `fail` Module
+
+Force a failure with a custom message.
+
+```yaml
+- name: Stop if disk space is low
+  ansible.builtin.fail:
+    msg: "Disk usage is above 90%, stopping deployment"
+  when: disk_usage | int > 90
+```
+
+---
+
+## 12. `assert` Module
+
+Validate conditions before continuing.
+
+```yaml
+- name: Validate prerequisites
+  ansible.builtin.assert:
+    that:
+      - ansible_memtotal_mb >= 4096
+      - app_version is defined
+    fail_msg: "Prerequisites not met"
+    success_msg: "Prerequisites validated"
+```
+
+If any condition in `that` is false, the task fails.
+
+---
+
+## 13. `any_errors_fatal`
+
+If one host fails, **stop the play for all hosts**.
+
+```yaml
+- name: Critical deployment
+  hosts: appservers
+  any_errors_fatal: true
+
+  tasks:
+    - name: Run migration
+      ansible.builtin.command: /opt/app/migrate.sh
+```
+
+Can also be set on a block:
+
+```yaml
+- name: Critical steps
+  block:
+    - name: Run migration
+      ansible.builtin.command: /opt/app/migrate.sh
+  any_errors_fatal: true
+```
+
+---
+
+## 14. `max_fail_percentage`
+
+Abort the play if more than a certain percentage of hosts fail. Commonly used with `serial` for rolling updates.
+
+```yaml
+- name: Rolling update
+  hosts: webservers
+  serial: 2
+  max_fail_percentage: 25
+
+  tasks:
+    - name: Deploy application
+      ansible.builtin.command: /opt/app/deploy.sh
+```
+
+---
+
+## 15. `force_handlers`
+
+Run notified handlers even if a later task fails.
+
+```yaml
+- name: Configure application
+  hosts: appservers
+  force_handlers: true
+
+  tasks:
+    - name: Deploy config
+      ansible.builtin.template:
+        src: app.conf.j2
+        dest: /etc/myapp/app.conf
+      notify: Restart myapp
+```
+
+---
+
+## 16. Nested Blocks
+
+Blocks can be nested.
+
+```yaml
+- name: Outer block
+  block:
+    - name: Prepare environment
+      ansible.builtin.debug:
+        msg: "Preparing"
+
+    - name: Inner deployment
+      block:
+        - name: Deploy
+          ansible.builtin.command: /opt/app/deploy.sh
+
+      rescue:
+        - name: Inner rollback
+          ansible.builtin.command: /opt/app/rollback.sh
+
+  rescue:
+    - name: Notify failure
+      ansible.builtin.debug:
+        msg: "Outer block failed"
+```
+
+---
+
+## 17. Blocks and `when`
+
+A `when` on a block is applied to each task inside it.
+
+```yaml
+- name: RedHat only tasks
+  block:
+    - name: Install package
+      ansible.builtin.dnf:
+        name: nginx
+        state: present
+
+    - name: Start service
+      ansible.builtin.service:
+        name: nginx
+        state: started
+
+  when: ansible_os_family == "RedHat"
+```
+
+---
+
+## 18. Limitations of Blocks
+
+- **`loop` cannot be used on a block.** Use `include_tasks` with `loop` and `loop_var` instead.
+- **`until` / `retries` cannot be used on a block.** Put them on individual tasks.
+- Block-level directives are inherited by tasks, but a task can override them.
+
+---
+
+## 19. Real DevOps Example: Deployment with Rollback
+
+```yaml
+---
+- name: Deploy application with rollback
+  hosts: appservers
+  become: true
+
+  tasks:
+    - name: Deployment
+      block:
+        - name: Backup current version
+          ansible.builtin.copy:
+            src: /opt/app/current
+            dest: /opt/app/backup
+            remote_src: true
+
+        - name: Deploy new version
+          ansible.builtin.command: /opt/app/deploy.sh
+
+        - name: Health check
+          ansible.builtin.uri:
+            url: http://localhost:8080/health
+            status_code: 200
+          register: health
+          until: health.status == 200
+          retries: 10
+          delay: 5
+
+      rescue:
+        - name: Show failure reason
+          ansible.builtin.debug:
+            msg: "Failed task: {{ ansible_failed_task.name }}"
+
+        - name: Roll back to backup
+          ansible.builtin.command: /opt/app/rollback.sh
+
+      always:
+        - name: Record deployment attempt
+          ansible.builtin.lineinfile:
+            path: /var/log/deploy.log
+            line: "Deployment attempted on {{ inventory_hostname }}"
+            create: true
+```
+
+---
+
+## 20. Important Syntax Rules
+
+### `rescue` and `always` are at the same level as `block`
+
+```yaml
+- block:
+    - ...
+  rescue:
+    - ...
+  always:
+    - ...
+```
+
+### `when`, `become`, `ignore_errors` for the block go at the same level as `block`
+
+```yaml
+- name: Example
+  block:
+    - ...
+  when: env_name == "production"
+  become: true
+```
+
+### Do NOT use `{{ }}` in `when`, `failed_when`, or `changed_when`
+
+```yaml
+failed_when: result.rc != 0          # correct
+failed_when: "{{ result.rc != 0 }}"  # wrong
+```
+
+### Avoid `environment` as a custom variable name
+
+`environment` is a reserved Ansible keyword. Use `env_name` instead.
+
+---
+
+## 21. Error Handling Options: Comparison
+
+| Option | Purpose | Scope |
+|---|---|---|
+| `ignore_errors` | Continue after a failure | Task / block |
+| `failed_when` | Custom failure condition | Task |
+| `changed_when` | Custom changed condition | Task |
+| `block / rescue / always` | try / catch / finally | Group of tasks |
+| `fail` | Force failure with message | Task |
+| `assert` | Validate conditions | Task |
+| `any_errors_fatal` | Stop all hosts on any failure | Play / block |
+| `max_fail_percentage` | Abort if too many hosts fail | Play |
+| `force_handlers` | Run handlers even after failure | Play |
+| `ignore_unreachable` | Continue if host unreachable | Task / block |
+
+---
+
+## 22. Common Interview Questions
+
+### Q1. What is a block in Ansible?
+
+A block groups tasks so you can apply directives like `when` or `become` to all of them and handle errors with `rescue` and `always`.
+
+### Q2. What are `rescue` and `always`?
+
+`rescue` runs if a task in the block fails (like catch). `always` runs regardless of success or failure (like finally).
+
+### Q3. What happens if `rescue` succeeds?
+
+The host is not marked as failed, and the play continues. The recap shows the host as rescued.
+
+### Q4. How do you get details of the failed task in `rescue`?
+
+Use `ansible_failed_task` and `ansible_failed_result`.
+
+### Q5. Difference between `ignore_errors` and `rescue`?
+
+`ignore_errors` simply continues after a failure. `rescue` lets you run specific recovery steps such as rollback or notification.
+
+### Q6. What is `failed_when`?
+
+It defines a custom condition for when a task should be considered failed.
+
+### Q7. What does `any_errors_fatal` do?
+
+If any host fails, it stops the play for all hosts.
+
+### Q8. What does `max_fail_percentage` do?
+
+It aborts the play when the percentage of failed hosts exceeds the given value, often used with `serial`.
+
+### Q9. Can you use `loop` on a block?
+
+No. Use `include_tasks` with `loop` instead.
+
+### Q10. How do you make sure handlers run after a failure?
+
+Use `force_handlers: true` or `--force-handlers`.
+
+---
+
+## 23. Quick Revision
+
+```yaml
+block:      # group of tasks (try)
+rescue:     # runs if block fails (catch)
+always:     # always runs (finally)
+
+ignore_errors: true
+ignore_unreachable: true
+failed_when: result.rc != 0
+changed_when: false
+any_errors_fatal: true
+max_fail_percentage: 25
+force_handlers: true
+
+ansible_failed_task.name
+ansible_failed_result.msg
+```
+
+```
+Block runs
+    ↓
+Task fails?
+    ├── No  → skip rescue → always runs
+    └── Yes → rescue runs → always runs
+```
+
+### Memory Trick
+
+```
+block   = try
+rescue  = catch
+always  = finally
+```
+
+---
+
+## 24. Interview Answer
+
+In Ansible, I use blocks to group related tasks and apply common directives like `when` and `become`. For error handling I use `block`, `rescue`, and `always`, similar to try, catch, and finally. For example, during a deployment I take a backup, deploy, and run a health check inside the block, roll back in `rescue`, and always write a log in `always`. I also use `failed_when` and `changed_when` for precise control, `any_errors_fatal` or `max_fail_percentage` for critical or rolling deployments, and `force_handlers` so handlers still run after a failure.
+
+---
+
+## 25. Additional Notes: Blocks & Error Handling
 
 ### Blocks
 
@@ -4678,15 +5264,8 @@ tasks:
 
 ### Error Handling: `rescue` and `always`
 
-- **`rescue`**: Runs only if a task inside the `block` fails — like a `catch` in programming. Lets you recover gracefully instead of the whole playbook aborting.
-- **`always`**: Runs no matter what — whether the block succeeded, failed, or was rescued. Good for cleanup/notification steps.
-
-```mermaid
-flowchart TD
-    A[block: tasks run in order] -->|success| D[always: runs]
-    A -->|failure| B[rescue: runs]
-    B --> D
-```
+- **`rescue`**: Runs only if a task inside the block fails, like a `catch` in programming. Lets you recover gracefully instead of the whole playbook aborting.
+- **`always`**: Runs no matter what, whether the block succeeded, failed, or was rescued. Good for cleanup and notification steps.
 
 ### `ignore_errors` (a simpler, less powerful alternative)
 
@@ -4695,7 +5274,8 @@ flowchart TD
   command: /opt/scripts/optional_check.sh
   ignore_errors: true
 ```
-**Difference from `block/rescue`:** `ignore_errors` just swallows the failure and moves on — it gives you no chance to actually recover or run cleanup logic. Use `block/rescue/always` for anything where you actually need to react to the failure.
+
+**Difference from block/rescue:** `ignore_errors` just swallows the failure and moves on. It gives you no chance to actually recover or run cleanup logic. Use `block` / `rescue` / `always` for anything where you need to react to the failure.
 
 ### Custom Failure/Change Definitions: `failed_when` and `changed_when`
 
@@ -4706,14 +5286,15 @@ By default, Ansible decides success/failure from a command's exit code, and "cha
   command: /opt/scripts/check_replication.sh
   register: repl_check
   failed_when: "'ERROR' in repl_check.stdout"    # treat as failed if this text appears, regardless of exit code
-  changed_when: false                              # this is a read-only check — never report "changed"
+  changed_when: false                              # this is a read-only check, never report "changed"
 ```
-- **`failed_when`**: Overrides what counts as a failure — critical for wrapping legacy scripts that don't use proper exit codes.
-- **`changed_when`**: Overrides what counts as a change — critical for keeping `command`/`shell` tasks honest in `--check`/`--diff` output (a read-only check should never show as "changed").
+
+- **`failed_when`**: Overrides what counts as a failure. Critical for wrapping legacy scripts that don't use proper exit codes.
+- **`changed_when`**: Overrides what counts as a change. Critical for keeping `command`/`shell` tasks honest in `--check`/`--diff` output (a read-only check should never show as "changed").
 
 ### Retrying a Task: `until`, `retries`, `delay`
 
-For a task that might need a few attempts before succeeding (e.g. waiting for a service to become healthy after a restart):
+For a task that might need a few attempts before succeeding (for example, waiting for a service to become healthy after a restart):
 
 ```yaml
 - name: Wait for the app to report healthy, retrying if not
@@ -4723,13 +5304,14 @@ For a task that might need a few attempts before succeeding (e.g. waiting for a 
   register: health_result
   until: health_result.status == 200
   retries: 5        # try up to 5 times
-  delay: 10          # wait 10 seconds between attempts
+  delay: 10         # wait 10 seconds between attempts
 ```
-- This is the general-purpose retry pattern — not limited to `async_status` (see Section 18), it works on any task.
+
+This is the general-purpose retry pattern. It is not limited to `async_status`; it works on any task.
 
 ### `any_errors_fatal`
 
-Normally, if a task fails on one host, Ansible just removes that host from the rest of the play and keeps going on the others. `any_errors_fatal: true` changes this — a single host's failure immediately aborts the ENTIRE play for ALL hosts, not just the failed one.
+Normally, if a task fails on one host, Ansible just removes that host from the rest of the play and keeps going on the others. `any_errors_fatal: true` changes this: a single host's failure immediately aborts the **entire play for all hosts**, not just the failed one.
 
 ```yaml
 - hosts: webservers
@@ -4738,27 +5320,29 @@ Normally, if a task fails on one host, Ansible just removes that host from the r
     - name: Critical pre-check that must pass everywhere before proceeding
       command: /opt/scripts/precheck.sh
 ```
-**When to use it:** For a task where partial success is actually WORSE than total failure — e.g. a pre-check that must pass on every server before any of them proceed to an actual risky change.
+
+**When to use it:** For a task where partial success is actually worse than total failure, for example a pre-check that must pass on every server before any of them proceed to an actual risky change.
 
 ### Common Mistakes
 
-- Overusing `ignore_errors: true` to silence real failures instead of properly handling them — this hides genuine production problems.
-- Forgetting that a failed host is, by default, removed from the rest of the play (unless handled) — later tasks simply skip that host silently.
+- Overusing `ignore_errors: true` to silence real failures instead of properly handling them. This hides genuine production problems.
+- Forgetting that a failed host is, by default, removed from the rest of the play (unless handled). Later tasks simply skip that host silently.
 - Forgetting `changed_when: false` on read-only diagnostic commands, causing them to always show as "changed" and clutter `--diff` output.
 - Using `any_errors_fatal` too broadly, turning every minor per-host hiccup into a total playbook abort.
 
-### Interview Questions (Section 13)
+### Additional Interview Questions
 
-- Q: What's the difference between `ignore_errors` and `block/rescue`?
-  A: `ignore_errors` just suppresses the failure with no recovery logic; `block/rescue` lets you define an actual recovery path (e.g. restore from backup) when something fails.
-- Q: When does the `always` section run?
-  A: Always — regardless of whether the block succeeded, failed, or was rescued. Good for cleanup/notifications.
-- Q: Why would you set `changed_when: false` on a `command` task?
-  A: Because it's a read-only check — without this, Ansible would report it as "changed" every run (since `command`/`shell` always default to "changed" on success), cluttering diffs and breaking idempotent reporting.
-- Q: What's the difference between a normal task failure and `any_errors_fatal: true`?
-  A: Normally a failed host is just dropped from the rest of the play while others continue; `any_errors_fatal` aborts the whole play for every host the moment any single host fails.
+**Q: What's the difference between `ignore_errors` and `block`/`rescue`?**
+A: `ignore_errors` just suppresses the failure with no recovery logic; `block`/`rescue` lets you define an actual recovery path (for example, restore from backup) when something fails.
 
----
+**Q: When does the `always` section run?**
+A: Always, regardless of whether the block succeeded, failed, or was rescued. Good for cleanup and notifications.
+
+**Q: Why would you set `changed_when: false` on a command task?**
+A: Because it's a read-only check. Without this, Ansible would report it as "changed" every run (since `command`/`shell` always default to "changed" on success), cluttering diffs and breaking idempotent reporting.
+
+**Q: What's the difference between a normal task failure and `any_errors_fatal: true`?**
+A: Normally a failed host is just dropped from the rest of the play while others continue; `any_errors_fatal` aborts the whole play for every host the moment any single host fails.
 
 # Ansible `until` (Retry Logic)
 
