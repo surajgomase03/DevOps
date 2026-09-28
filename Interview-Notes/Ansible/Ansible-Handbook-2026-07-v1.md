@@ -3448,6 +3448,8 @@ Reusable roles
 
 ---
 
+
+
 ## 45. Production Example
 
 Suppose we need to configure multiple applications.
@@ -3511,6 +3513,144 @@ This pattern is useful because application configuration is data-driven.
 | `item.port` | Dictionary field named `port` |
 
 ---
+
+# Important Syntax Rules for Ansible Loops
+
+## 1. `loop` is at the task level, aligned with the module
+
+```yaml
+- name: Install packages
+  ansible.builtin.package:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - nginx
+    - git
+```
+
+`loop` sits at the same indentation as the module name, not inside it.
+
+## 2. Quote `{{ item }}` when it starts a value
+
+```yaml
+name: "{{ item }}"      # correct
+name: {{ item }}        # wrong (YAML error)
+```
+
+## 3. When looping over a variable, wrap it in `{{ }}` as a quoted string
+
+```yaml
+loop: "{{ packages }}"  # correct
+loop: packages          # wrong (treated as a literal string)
+```
+
+## 4. Access dictionary fields with `item.field`
+
+```yaml
+name: "{{ item.name }}"
+uid: "{{ item.uid }}"
+```
+
+## 5. `when` inside a loop does NOT use `{{ }}` and is evaluated per item
+
+```yaml
+when: item != "docker"
+when: item.env_name == "production"
+```
+
+## 6. Use `loop_var` in nested loops or `include_tasks` to avoid `item` conflicts
+
+```yaml
+loop_control:
+  loop_var: application
+```
+
+## 7. Loop only works on lists
+
+- For dictionaries, convert first: `loop: "{{ mydict | dict2items }}"`
+- For two lists together: `loop: "{{ list1 | zip(list2) | list }}"`
+- For ranges: `loop: "{{ range(1, 6) | list }}"`
+
+## 8. Guard against undefined variables
+
+```yaml
+loop: "{{ packages | default([]) }}"
+```
+
+## 9. A registered loop result is under `.results`
+
+```yaml
+register: out
+# access with: out.results[0].stdout
+```
+
+## 10. Prefer `loop` over `with_items` in new playbooks
+
+```yaml
+loop:            # recommended
+  - nginx
+
+with_items:      # legacy
+  - nginx
+```
+
+## 11. `loop_control` options
+
+```yaml
+loop_control:
+  label: "{{ item.name }}"   # cleaner output
+  index_var: idx             # iteration number
+  loop_var: app              # rename item
+  pause: 5                   # seconds between iterations
+  extended: true             # enables ansible_loop.*
+```
+
+## 12. `until` retries apply per loop item, not to the whole loop
+
+```yaml
+- name: Check endpoint
+  ansible.builtin.uri:
+    url: "http://{{ item }}"
+    status_code: 200
+  loop:
+    - app01
+    - app02
+  register: result
+  until: result.status == 200
+  retries: 5
+  delay: 10
+```
+
+## 13. `loop` cannot be used on a `block`
+
+Use `include_tasks` with `loop` and `loop_var` instead.
+
+```yaml
+- name: Configure applications
+  ansible.builtin.include_tasks: configure_app.yml
+  loop:
+    - app1
+    - app2
+  loop_control:
+    loop_var: app_name
+```
+
+## 14. Avoid reserved names for your own variables
+
+`environment` is a reserved Ansible keyword. Use a name like `env_name` instead.
+
+---
+
+## Quick Syntax Checklist
+
+| Rule | Correct | Wrong |
+|---|---|---|
+| Loop over variable | `loop: "{{ packages }}"` | `loop: packages` |
+| Use item | `name: "{{ item }}"` | `name: {{ item }}` |
+| Dictionary field | `"{{ item.name }}"` | `"{{ item[name] }}"` |
+| Condition | `when: item != "x"` | `when: "{{ item != 'x' }}"` |
+| Dictionary loop | `loop: "{{ d \| dict2items }}"` | `loop: "{{ d }}"` |
+| Undefined variable | `"{{ v \| default([]) }}"` | `"{{ v }}"` |
 
 ## 47. Extended Loop Information
 
@@ -4099,6 +4239,440 @@ Normally, if a task fails on one host, Ansible just removes that host from the r
   A: Normally a failed host is just dropped from the rest of the play while others continue; `any_errors_fatal` aborts the whole play for every host the moment any single host fails.
 
 ---
+
+# Ansible `until` (Retry Logic)
+
+## 1. What is `until`?
+
+- `until` is used to **retry a task until a condition becomes true**.
+- It is used together with `retries` and `delay`.
+- It is commonly used to wait for something to become ready (service, endpoint, pod, file, port, etc.).
+- `until` does **not** require `{{ }}` around variables (same as `when`).
+
+### Basic Syntax
+
+```yaml
+- name: Check application health
+  ansible.builtin.uri:
+    url: http://localhost:8080/health
+    status_code: 200
+  register: health_result
+  until: health_result.status == 200
+  retries: 5
+  delay: 10
+```
+
+### Flow
+
+```
+Run task
+   |
+   v
+Check until condition
+   |
+   +---- true  ---> task succeeds, continue playbook
+   |
+   +---- false ---> wait (delay) ---> retry
+                          |
+                          v
+              retries exhausted ---> task FAILS
+```
+
+---
+
+## 2. The Three Keywords
+
+| Keyword | Purpose | Default |
+|---|---|---|
+| `until` | Condition that must become true | none |
+| `retries` | Maximum number of attempts | `3` |
+| `delay` | Seconds to wait between attempts | `5` |
+
+---
+
+## 3. `register` is Required
+
+`until` normally checks the result of the task, so you must capture it with `register`.
+
+```yaml
+- name: Check service
+  ansible.builtin.command: systemctl is-active nginx
+  register: nginx_status
+  until: nginx_status.stdout == "active"
+  retries: 5
+  delay: 5
+  changed_when: false
+```
+
+The registered variable is used inside `until`.
+
+---
+
+## 4. Basic Example: Wait for an HTTP Endpoint
+
+```yaml
+- name: Wait for application to respond
+  ansible.builtin.uri:
+    url: "http://localhost:8080/health"
+    status_code: 200
+  register: result
+  until: result.status == 200
+  retries: 10
+  delay: 6
+```
+
+Meaning: try up to 10 times, wait 6 seconds between attempts, stop as soon as the status is 200.
+
+---
+
+## 5. Example: Check Command Output
+
+```yaml
+- name: Wait for pod to be Running
+  ansible.builtin.command: kubectl get pod myapp -o jsonpath='{.status.phase}'
+  register: pod_status
+  until: pod_status.stdout == "Running"
+  retries: 12
+  delay: 10
+  changed_when: false
+```
+
+---
+
+## 6. Example: Check Return Code
+
+```yaml
+- name: Wait until database port is reachable
+  ansible.builtin.command: nc -z db01 5432
+  register: db_check
+  until: db_check.rc == 0
+  retries: 10
+  delay: 5
+  changed_when: false
+```
+
+`rc == 0` generally means the command succeeded.
+
+---
+
+## 7. Example: Check `stdout` Contains a Value
+
+```yaml
+- name: Wait for deployment message
+  ansible.builtin.shell: cat /var/log/app.log
+  register: log_output
+  until: "'Application started' in log_output.stdout"
+  retries: 10
+  delay: 5
+  changed_when: false
+```
+
+---
+
+## 8. Example: Wait for a File
+
+```yaml
+- name: Wait for file to appear
+  ansible.builtin.stat:
+    path: /tmp/ready.flag
+  register: flag_file
+  until: flag_file.stat.exists
+  retries: 10
+  delay: 3
+```
+
+---
+
+## 9. The `attempts` Field
+
+When `until` is used, the registered variable gets an `attempts` value showing how many attempts were used.
+
+```yaml
+- name: Check endpoint
+  ansible.builtin.uri:
+    url: http://localhost:8080/health
+    status_code: 200
+  register: result
+  until: result.status == 200
+  retries: 5
+  delay: 10
+
+- name: Show attempts used
+  ansible.builtin.debug:
+    msg: "Succeeded after {{ result.attempts }} attempt(s)"
+```
+
+---
+
+## 10. What Happens When Retries Run Out?
+
+- The task **fails**.
+- The playbook stops for that host (unless handled).
+
+To continue anyway:
+
+```yaml
+- name: Optional check
+  ansible.builtin.uri:
+    url: http://localhost:8080/health
+  register: result
+  until: result.status == 200
+  retries: 3
+  delay: 5
+  ignore_errors: true
+```
+
+Use `ignore_errors` carefully; only when a failed check is acceptable.
+
+---
+
+## 11. Handle Connection Failures Safely
+
+If the service is not up yet, the task result may not contain the field you check. Guard the condition.
+
+```yaml
+- name: Wait for API
+  ansible.builtin.uri:
+    url: http://localhost:8080/health
+    status_code: 200
+  register: result
+  until: result.status is defined and result.status == 200
+  retries: 10
+  delay: 5
+```
+
+---
+
+## 12. `until` with `loop`
+
+Retries apply to **each loop item separately**.
+
+```yaml
+- name: Check multiple endpoints
+  ansible.builtin.uri:
+    url: "http://{{ item }}/health"
+    status_code: 200
+  loop:
+    - app01
+    - app02
+  register: result
+  until: result.status == 200
+  retries: 5
+  delay: 10
+```
+
+Conceptually:
+
+```
+app01 -> retry until HTTP 200
+app02 -> retry until HTTP 200
+```
+
+Results are stored under `result.results`, and each item has its own `attempts`.
+
+---
+
+## 13. `until` with `failed_when` and `changed_when`
+
+```yaml
+- name: Check job status
+  ansible.builtin.command: /opt/app/job-status.sh
+  register: job
+  until: "'COMPLETED' in job.stdout"
+  retries: 20
+  delay: 15
+  changed_when: false
+```
+
+- `changed_when: false` keeps read-only checks from being reported as changed.
+- Be careful when combining `failed_when` with `until`; make sure the failure condition does not stop the retry logic unexpectedly.
+
+---
+
+## 14. `until` vs `wait_for`
+
+Ansible has a dedicated module for common waiting cases.
+
+```yaml
+- name: Wait for port 8080
+  ansible.builtin.wait_for:
+    host: localhost
+    port: 8080
+    delay: 5
+    timeout: 60
+```
+
+| Use | When |
+|---|---|
+| `wait_for` | Waiting for a port, file, or string in a file |
+| `until` | Retrying any task based on its result (API call, command output, etc.) |
+
+Prefer `wait_for` when it fits; use `until` for custom conditions.
+
+---
+
+## 15. Real DevOps Example: Wait for Deployment
+
+```yaml
+- name: Wait for deployment rollout
+  ansible.builtin.command: >
+    kubectl get deployment myapp
+    -o jsonpath='{.status.readyReplicas}'
+  register: ready_replicas
+  until: ready_replicas.stdout == "3"
+  retries: 30
+  delay: 10
+  changed_when: false
+```
+
+---
+
+## 16. Real DevOps Example: Wait After Service Restart
+
+```yaml
+- name: Restart application
+  ansible.builtin.service:
+    name: myapp
+    state: restarted
+
+- name: Wait for application health check
+  ansible.builtin.uri:
+    url: http://localhost:8080/health
+    status_code: 200
+  register: health
+  until: health.status == 200
+  retries: 12
+  delay: 5
+```
+
+---
+
+## 17. Important Syntax Rules
+
+### Do NOT use `{{ }}` in `until`
+
+```yaml
+until: result.rc == 0          # correct
+until: "{{ result.rc == 0 }}"  # wrong
+```
+
+### `register` must be on the same task
+
+```yaml
+- name: Example
+  ansible.builtin.command: some_command
+  register: result
+  until: result.rc == 0
+  retries: 5
+  delay: 3
+```
+
+### Keywords are task-level
+
+`until`, `retries`, and `delay` are placed at the task level, aligned with the module name.
+
+### Quote conditions that contain `'` or `:`
+
+```yaml
+until: "'ready' in result.stdout"
+```
+
+### `until` cannot be used on a `block`
+
+It is a task-level keyword. Put it on the individual task inside the block.
+
+---
+
+## 18. Total Wait Time Formula
+
+```
+Maximum wait ≈ retries × delay
+```
+
+Example: `retries: 12` and `delay: 10` → roughly up to 120 seconds of waiting.
+
+---
+
+## 19. Common Interview Questions
+
+### Q1. What is `until` in Ansible?
+
+`until` retries a task until a specified condition becomes true, or until the retries are exhausted.
+
+### Q2. Which keywords are used with `until`?
+
+`retries` (maximum attempts) and `delay` (seconds between attempts).
+
+### Q3. Is `register` required?
+
+In practice yes, because the condition normally checks the task result, for example `result.rc == 0` or `result.status == 200`.
+
+### Q4. What happens if the condition is never true?
+
+After all retries are used, the task fails.
+
+### Q5. What are the defaults?
+
+`retries: 3` and `delay: 5`.
+
+### Q6. How can you see how many attempts were made?
+
+Use `result.attempts` from the registered variable.
+
+### Q7. How does `until` behave with a loop?
+
+Retries are applied separately for each loop item.
+
+### Q8. Difference between `until` and `wait_for`?
+
+`wait_for` is a dedicated module for waiting on ports, files, or text. `until` is a generic retry mechanism for any task.
+
+### Q9. Do we use `{{ }}` in `until`?
+
+No. Like `when`, it is already a Jinja2 expression.
+
+---
+
+## 20. Quick Revision
+
+```yaml
+until: result.rc == 0
+until: result.status == 200
+until: result.stdout == "active"
+until: "'ready' in result.stdout"
+until: result.stat.exists
+until: result.status is defined and result.status == 200
+retries: 10
+delay: 5
+```
+
+```
+until    -> condition to become true
+retries  -> maximum attempts (default 3)
+delay    -> seconds between attempts (default 5)
+register -> capture result to check
+attempts -> how many tries were used (result.attempts)
+```
+
+### Memory Trick
+
+```
+Task runs
+    ↓
+Condition false?
+    ↓
+Wait (delay)
+    ↓
+Retry (up to retries)
+    ↓
+Still false → task fails
+```
+
+---
+
+## 21. Interview Answer
+
+`until` is used to retry a task until a condition is met. I combine it with `register`, `retries`, and `delay` to wait for things like an application health check, a pod becoming ready, or a port opening. If the condition is not met after all retries, the task fails. I use `wait_for` for simple port or file waits and `until` for custom result-based conditions.
 
 ## 14. Includes vs Imports
 
