@@ -36,6 +36,456 @@
 
 ## 1.3 Linux Architecture
 
+# Linux Architecture: Interview Notes
+
+## 1. Layered Overview
+
+```
++--------------------------------------+
+|          User Applications           |
+|  Browser | Nginx | Docker | Scripts  |
++--------------------------------------+
+|                Shell                 |
+|  bash | sh | zsh                     |
++--------------------------------------+
+|          System Libraries            |
+|  glibc, shared libraries             |
++--------------------------------------+
+|             System Calls             |
+|  open() | read() | write() | fork() |
++--------------------------------------+
+|             Linux Kernel             |
+|  Process | Memory | VFS | Network    |
+|  Device Drivers | Security | IPC     |
++--------------------------------------+
+|               Hardware               |
+|  CPU | RAM | Disk | NIC | Devices    |
++--------------------------------------+
+```
+
+**Key points**
+- Layers talk only to the layer directly below them.
+- Applications never touch hardware directly; the kernel is the gatekeeper.
+- Kernel = core. Shell = just another user-space program.
+
+---
+
+## 2. User Space vs Kernel Space
+
+```
++--------------------------------------------+
+|              USER SPACE                    |
+|  (restricted, cannot touch hardware)       |
+|                                            |
+|   Nginx    bash    python    docker CLI    |
++---------------------+----------------------+
+                      |
+              System Call Interface
+           (mode switch: user -> kernel)
+                      |
++---------------------v----------------------+
+|             KERNEL SPACE                   |
+|  (privileged, full hardware access)        |
+|                                            |
+|   Scheduler | VFS | TCP/IP | Drivers       |
++--------------------------------------------+
+                      |
+                   Hardware
+```
+
+**Key points**
+- User space = restricted mode (CPU ring 3). Kernel space = privileged mode (ring 0).
+- A crash in a user process usually kills only that process. A crash in the kernel = kernel panic (whole system).
+- System calls are the **only** controlled entry from user space to kernel space.
+- Each mode switch has a cost, so fewer syscalls = better performance (why buffered I/O exists).
+
+```bash
+# Time spent in user vs kernel mode
+time ls -R /usr > /dev/null
+# real = wall clock, user = user-space CPU, sys = kernel-space CPU
+```
+
+---
+
+## 3. Hardware
+
+- CPU, RAM, HDD/SSD, NIC, GPU, keyboard/mouse, storage controllers
+- The kernel talks to hardware through **device drivers**.
+- Many drivers are **loadable kernel modules**.
+
+```bash
+lsmod            # loaded kernel modules
+lspci            # PCI devices
+lscpu            # CPU info
+```
+
+---
+
+## 4. Linux Kernel
+
+```
+                 +-------------------------+
+                 |      Linux Kernel       |
+                 +-------------------------+
+                 |  Process Management     |  fork, schedule, kill
+                 |  Memory Management      |  virtual memory, paging
+                 |  File System (VFS)      |  ext4, xfs, nfs...
+                 |  Networking             |  TCP/IP stack
+                 |  Device Drivers         |  disk, NIC, GPU
+                 |  Security               |  permissions, SELinux
+                 |  IPC                    |  pipes, sockets, signals
+                 +-------------------------+
+```
+
+| Component | Responsibility |
+|---|---|
+| Process Management | Creates, schedules, terminates processes |
+| Memory Management | Allocates RAM, manages virtual memory and swap |
+| File System (VFS) | Common interface over ext4, xfs, NFS, etc. |
+| Networking | TCP/IP, sockets, routing, firewall (netfilter) |
+| Device Drivers | Talk to hardware |
+| Security | Permissions, capabilities, SELinux/AppArmor |
+| IPC | Pipes, signals, shared memory, sockets |
+
+**Key points**
+- Linux is a **monolithic kernel** with **loadable modules** (drivers can be added/removed at runtime).
+- Monolithic means all core services run in kernel space (fast, but a bad driver can crash the system).
+- Linux is **open source, multi-user, multitasking, portable**.
+- **VFS** lets `ls`, `cat`, etc. work the same on any filesystem.
+- **Everything is a file**: regular files, directories, devices (`/dev`), processes (`/proc`), kernel info (`/sys`).
+
+```bash
+uname -r                 # kernel version
+cat /proc/version        # kernel build info
+ls /proc/self            # info about the current process
+```
+
+---
+
+## 5. System Calls
+
+```
+Application
+    |
+    | 1. cat calls read() via glibc wrapper
+    v
++-----------------+
+|  glibc wrapper  |
++-----------------+
+    |
+    | 2. trap into kernel (mode switch)
+    v
++-----------------+
+| Kernel: VFS ->  |
+| filesystem ->   |
+| block driver    |
++-----------------+
+    |
+    | 3. hardware I/O
+    v
+  SSD / HDD
+    |
+    | 4. data copied to user buffer, return to user mode
+    v
+Application
+```
+
+**Common syscalls**
+
+| Syscall | Purpose |
+|---|---|
+| `open()/openat()` | Open a file |
+| `read()` / `write()` | Read / write data |
+| `close()` | Close a file descriptor |
+| `fork()` / `clone()` | Create a process |
+| `execve()` | Replace process image with a new program |
+| `wait()` | Parent waits for child |
+| `socket()` | Create a network socket |
+| `exit()` | Terminate process |
+
+```bash
+strace -e trace=openat,read,write cat /etc/hosts
+strace -c ls          # summary: which syscalls, how many times
+```
+
+---
+
+## 6. System Libraries
+
+```
+Application  ->  glibc  ->  System Call  ->  Kernel
+  printf()       write()      trap          driver
+```
+
+**Key points**
+- **glibc** is the main C library on most Linux distros (Alpine uses **musl**).
+- Libraries wrap syscalls so developers don't write low-level code.
+- Not every library call = a syscall (e.g., `strlen()` never enters the kernel).
+- Shared libraries (`.so`) are loaded at runtime by the dynamic linker.
+
+```bash
+ldd /bin/ls               # shared libs used
+ldd --version             # glibc version
+```
+
+---
+
+## 7. Shell
+
+**Key points**
+- Shell = command interpreter and user interface, **not** part of the kernel.
+- Common shells: bash, sh, zsh, fish.
+- Built-ins (`cd`, `export`) run inside the shell. External commands (`ls`, `grep`) run as new processes.
+
+```bash
+type cd     # shell builtin
+type ls     # external command (or alias)
+echo $SHELL
+```
+
+**What the shell does for `ls`**
+1. Reads and parses the command.
+2. Searches `$PATH` for the executable.
+3. `fork()` creates a child process.
+4. Child calls `execve()` to load `ls`.
+5. Parent shell `wait()`s for the child.
+6. Output goes to the terminal; the shell shows the prompt again.
+
+---
+
+## 8. Process Creation Diagram (fork + exec)
+
+```
+   bash (PID 100)
+        |
+        | fork()
+        v
+   +----+-----------------+
+   |                      |
+bash (PID 100)      child (PID 101)
+   |  (parent)            |  copy of bash
+   |                      | execve("/bin/ls")
+   | wait()               v
+   |                 ls runs (PID 101)
+   |                      |
+   |                      | exit(0)
+   |<---------------------+
+   v
+prompt returns
+```
+
+**Key points**
+- `fork()` = clone the process. `exec()` = replace it with a new program.
+- Every process (except PID 1) has a parent. PID 1 is `init`/`systemd`.
+- **Zombie**: child finished but parent has not called `wait()`.
+- **Orphan**: parent died first; PID 1 adopts the child.
+
+```bash
+ps -ef --forest         # process tree
+ps aux | grep Z         # look for zombies (state Z)
+```
+
+---
+
+## 9. Full Flow: What Happens When I Run `ls`
+
+```
+You type: ls
+     |
+     v
+  Shell parses command
+     |
+     v
+  Searches $PATH -> /bin/ls
+     |
+     v
+  fork() -> child process
+     |
+     v
+  execve("/bin/ls")
+     |
+     v
+  Dynamic linker loads glibc
+     |
+     v
+  ls calls openat() + getdents64()
+     |
+     v
+  Kernel -> VFS -> filesystem -> disk
+     |
+     v
+  ls calls write() to stdout
+     |
+     v
+  exit() -> shell wait() returns
+     |
+     v
+  Prompt shown
+```
+
+```bash
+strace -f -e trace=execve,openat,getdents64,write ls
+```
+
+---
+
+## 10. Full Flow: Application Reads a File
+
+```
+App: read(fd, buf, n)
+     |
+     v
+  glibc wrapper
+     |
+     v
+  Trap: user mode -> kernel mode
+     |
+     v
+  VFS: find file, check permissions
+     |
+     v
+  Page cache hit? ----yes----> copy to app buffer
+     |
+     no
+     v
+  Filesystem + block layer + disk driver
+     |
+     v
+  Disk read -> fill page cache
+     |
+     v
+  Copy to app buffer, return to user mode
+```
+
+**Key points**
+- The **page cache** is why the second read of a file is much faster.
+- Free RAM used as cache is normal, not a leak.
+
+```bash
+free -h                 # buff/cache column
+strace -e trace=openat,read,close cat /etc/hosts
+```
+
+---
+
+## 11. Virtual Memory (Quick Diagram)
+
+```
+Process A               Process B
++---------+            +---------+
+| stack   |            | stack   |
+| heap    |            | heap    |
+| code    |            | code    |
++---------+            +---------+
+     \                    /
+      \  Page Tables     /
+       v                v
+   +-------------------------+
+   |   Physical RAM / Swap   |
+   +-------------------------+
+```
+
+**Key points**
+- Each process gets its own virtual address space, isolated from others.
+- The kernel maps virtual to physical memory using page tables.
+- If RAM is short, the kernel swaps pages out; if memory is exhausted, the **OOM killer** kills a process.
+
+```bash
+free -h
+cat /proc/meminfo | head
+dmesg | grep -i "killed process"    # OOM events
+```
+
+---
+
+## 12. DevOps Relevance: Containers and the Kernel
+
+```
++-----------+  +-----------+  +-----------+
+|Container A|  |Container B|  |Container C|
+| app+libs  |  | app+libs  |  | app+libs  |
++-----+-----+  +-----+-----+  +-----+-----+
+      \             |             /
+       +------------+------------+
+                    |
+          ONE SHARED LINUX KERNEL
+                    |
+                 Hardware
+```
+
+**Key points**
+- Containers share the **host kernel**; VMs each run their own kernel.
+- Containers use kernel features: **namespaces** (isolation) and **cgroups** (resource limits).
+- A container is essentially a normal Linux process with isolation.
+- The kernel version of the host decides which features a container can use.
+
+```bash
+docker run --rm alpine uname -r     # same kernel version as the host
+ls /proc/self/ns                    # namespaces of current process
+```
+
+---
+
+## 13. Must-Know Points for Interviews
+
+1. Linux layers: Hardware -> Kernel -> System Calls -> Libraries -> Shell -> Applications.
+2. Kernel manages CPU, memory, processes, filesystems, networking, devices, security.
+3. Kernel space is privileged; user space is restricted.
+4. System calls are the only interface from user space to the kernel.
+5. glibc wraps syscalls; not every library call is a syscall.
+6. Linux uses a monolithic kernel with loadable modules.
+7. Everything is a file (`/dev`, `/proc`, `/sys`).
+8. New programs start with `fork()` then `execve()`.
+9. PID 1 is `systemd`/`init`; it adopts orphans.
+10. Page cache speeds up file reads; cached memory is reclaimable.
+11. Containers share the host kernel; VMs do not.
+12. `strace` is the tool to see syscalls in action.
+
+---
+
+## 14. Common Mistakes to Avoid
+
+| Mistake | Correct Understanding |
+|---|---|
+| "Shell is part of the kernel" | Shell is a user-space program. Kernel != Shell. |
+| "Linux is an operating system" (only) | Strictly, Linux is the **kernel**. The OS = kernel + GNU tools + distro (say "Linux-based OS"). |
+| "Applications talk directly to hardware" | They go through syscalls and the kernel. |
+| "Every library function is a system call" | Many (e.g., `strlen`) never enter the kernel. |
+| "Linux is a microkernel" | It is monolithic (with loadable modules). |
+| "`fork()` runs a new program" | `fork()` clones; `exec()` loads the new program. |
+| "High used memory in `free` means a problem" | Buff/cache is reclaimable; check the **available** column. |
+| "Containers are lightweight VMs with their own kernel" | They share the host kernel. |
+| "Zombie processes can be killed with `kill -9`" | They are already dead; fix or kill the **parent**. |
+| "`cd` is a command in `/bin`" | It is a shell builtin (must change the shell's own state). |
+| Confusing kernel modules with user programs | Modules run inside the kernel; a bug can panic the system. |
+| Only memorizing definitions | Interviewers want a real example (`ls`, file read); practice with `strace`. |
+
+---
+
+## 15. Interview Answer (Short Version)
+
+> Linux follows a layered architecture consisting of hardware, the Linux kernel, system libraries, the shell, and user applications. The kernel is the core: it manages CPU, memory, processes, filesystems, networking, devices, and security. Applications run in user space and request kernel services through system calls, typically via libraries like glibc. The shell is a user-space command interpreter that launches programs using `fork()` and `execve()`.
+
+**Closing line to add for a Senior DevOps role:**
+
+> "This matters in production because containers share the host kernel, resource limits come from cgroups, and tools like `strace`, `top`, and `dmesg` let me trace problems down to syscalls, memory pressure, or OOM kills."
+
+---
+
+## 16. Quick Command Cheat Sheet
+
+```bash
+uname -a                           # kernel and system info
+strace -c <cmd>                    # syscall summary
+strace -f -e trace=execve <cmd>    # follow forks, show program execs
+ldd /bin/ls                        # shared libraries
+lsmod                              # kernel modules
+ps -ef --forest                    # process tree
+top / htop                         # CPU, memory, processes
+free -h                            # memory and cache
+dmesg | tail                       # kernel messages
+ls /proc/<pid>                     # process details
+```
 ```
 ┌──────────────────────────────────────────┐
 │  USER APPLICATIONS                       │
