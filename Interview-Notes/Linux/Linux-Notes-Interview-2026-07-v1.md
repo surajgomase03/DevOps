@@ -23,9 +23,10 @@
 
 ## 1.1 What is Linux?
 
-**Simple:** Linux is a free, open-source OS kernel — the engine powering servers, phones, cloud, and containers.  
-**Technical:** Monolithic, Unix-like kernel created by Linus Torvalds in 1991 (GPL v2). Combined with GNU tools = GNU/Linux.  
-**Analogy:** Linux is the engine of a car — invisible but everything depends on it.
+**Linux is an open-source operating system kernel** that manages hardware (CPU, memory, disks, network) and lets programs run on top of it.
+
+Strictly speaking, Linux is only the **kernel**. Everyday "Linux" (Ubuntu, RHEL, Amazon Linux) is a **distribution** = Linux kernel + GNU tools + libraries + package manager + init system.
+
 
 ## 1.2 Why Linux Was Created
 
