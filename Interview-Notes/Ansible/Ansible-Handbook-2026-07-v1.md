@@ -8324,3 +8324,1048 @@ ansible windows_servers -m win_ping                          # test WinRM connec
 ---
 
 *End of notes. This file is designed to be your single source of truth for Ansible interview preparation — revisit the Cheat Sheet and Rapid Fire tables the morning of the interview.*
+
+
+
+# Most Important Ansible Modules for Interviews
+
+## 0. Quick Notes
+
+- A **module** is a unit of work that Ansible runs on a host (install a package, edit a file, restart a service).
+- Modules are **idempotent** when they describe a desired `state`. Running them twice does not change anything the second time.
+- Use the **fully qualified collection name (FQCN)**, for example `ansible.builtin.file`.
+- `block` is **not a module**. It is a task keyword used to group tasks (see the Blocks & Error Handling notes).
+
+### Module Categories
+
+| Category | Modules |
+|---|---|
+| Packages | `package`, `apt`, `dnf`, `yum`, `pip` |
+| Services | `service`, `systemd` |
+| Files | `file`, `copy`, `template`, `lineinfile`, `blockinfile`, `replace`, `stat`, `find`, `fetch`, `unarchive`, `get_url` |
+| Commands | `command`, `shell`, `raw`, `script` |
+| Users | `user`, `group`, `authorized_key` |
+| Scheduling | `cron` |
+| Network / API | `uri`, `wait_for`, `get_url` |
+| Source control | `git` |
+| Control / debug | `debug`, `set_fact`, `assert`, `fail`, `pause`, `meta` |
+| System | `setup`, `reboot`, `mount`, `sysctl` |
+
+---
+
+# Part 1: Package Management
+
+## 1. `package` (Generic)
+
+Works across distributions by using the right package manager automatically.
+
+```yaml
+- name: Install nginx
+  ansible.builtin.package:
+    name: nginx
+    state: present
+```
+
+### Multiple packages
+
+```yaml
+- name: Install required packages
+  ansible.builtin.package:
+    name:
+      - git
+      - curl
+      - vim
+    state: present
+```
+
+### `state` values
+
+| State | Meaning |
+|---|---|
+| `present` | Install if missing |
+| `latest` | Install or upgrade to the latest version |
+| `absent` | Remove the package |
+
+Note: package names can differ between distributions (for example `httpd` vs `apache2`), so `package` is not always fully portable.
+
+---
+
+## 2. `apt` (Debian / Ubuntu)
+
+```yaml
+- name: Install nginx
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+```
+
+| Parameter | Purpose |
+|---|---|
+| `update_cache` | Run `apt update` |
+| `cache_valid_time` | Skip update if cache is fresher than this many seconds |
+| `state: latest` | Upgrade to latest |
+| `autoremove` | Remove unused dependencies |
+
+---
+
+## 3. `dnf` / `yum` (RedHat family)
+
+```yaml
+- name: Install nginx
+  ansible.builtin.dnf:
+    name: nginx
+    state: present
+```
+
+```yaml
+- name: Install specific version
+  ansible.builtin.yum:
+    name: nginx-1.24.0
+    state: present
+```
+
+---
+
+## 4. `pip`
+
+```yaml
+- name: Install Python libraries
+  ansible.builtin.pip:
+    name:
+      - boto3
+      - requests
+    state: present
+```
+
+---
+
+# Part 2: Services
+
+## 5. `service`
+
+Generic module to manage services.
+
+```yaml
+- name: Start and enable nginx
+  ansible.builtin.service:
+    name: nginx
+    state: started
+    enabled: true
+```
+
+### `state` values
+
+| State | Meaning |
+|---|---|
+| `started` | Ensure the service is running |
+| `stopped` | Ensure the service is stopped |
+| `restarted` | Always restart |
+| `reloaded` | Reload configuration |
+
+`enabled: true` makes the service start at boot.
+
+---
+
+## 6. `systemd`
+
+Use when you need systemd-specific features.
+
+```yaml
+- name: Reload systemd and start app
+  ansible.builtin.systemd:
+    name: myapp
+    state: started
+    enabled: true
+    daemon_reload: true
+```
+
+| Parameter | Purpose |
+|---|---|
+| `daemon_reload` | Run `systemctl daemon-reload` (after adding/changing unit files) |
+| `masked` | Mask or unmask a unit |
+
+### `service` vs `systemd`
+
+| Module | Use when |
+|---|---|
+| `service` | Generic, works with different init systems |
+| `systemd` | You need `daemon_reload`, `masked`, or other systemd features |
+
+---
+
+# Part 3: Files and Directories
+
+## 7. `file`
+
+Manages files, directories, symlinks, permissions, and ownership. It does **not** create a file with content (use `copy` or `template` for that).
+
+### Create a directory
+
+```yaml
+- name: Create application directory
+  ansible.builtin.file:
+    path: /opt/app
+    state: directory
+    owner: appuser
+    group: appuser
+    mode: "0755"
+```
+
+### Create an empty file
+
+```yaml
+- name: Create empty file
+  ansible.builtin.file:
+    path: /tmp/app.log
+    state: touch
+    mode: "0644"
+```
+
+### Remove a file or directory
+
+```yaml
+- name: Remove old directory
+  ansible.builtin.file:
+    path: /opt/old
+    state: absent
+```
+
+### Create a symlink
+
+```yaml
+- name: Create symlink
+  ansible.builtin.file:
+    src: /opt/app/releases/v2
+    dest: /opt/app/current
+    state: link
+```
+
+### Change permissions recursively
+
+```yaml
+- name: Fix ownership recursively
+  ansible.builtin.file:
+    path: /opt/app
+    owner: appuser
+    group: appuser
+    recurse: true
+```
+
+### `state` values
+
+| State | Meaning |
+|---|---|
+| `file` | Ensure the file exists (does not create it) |
+| `directory` | Create directory (and parents) |
+| `touch` | Create empty file / update timestamp |
+| `absent` | Delete file or directory |
+| `link` | Symbolic link |
+| `hard` | Hard link |
+
+Tip: always quote `mode` as a string, for example `"0644"`.
+
+---
+
+## 8. `copy`
+
+Copies files from the control node to the managed host, or writes content directly.
+
+```yaml
+- name: Copy configuration file
+  ansible.builtin.copy:
+    src: app.conf
+    dest: /etc/myapp/app.conf
+    owner: root
+    group: root
+    mode: "0644"
+    backup: true
+```
+
+### Write inline content
+
+```yaml
+- name: Create file with content
+  ansible.builtin.copy:
+    content: |
+      line1
+      line2
+    dest: /tmp/example.txt
+```
+
+### Copy a file that is already on the remote host
+
+```yaml
+- name: Backup file on remote host
+  ansible.builtin.copy:
+    src: /etc/myapp/app.conf
+    dest: /etc/myapp/app.conf.bak
+    remote_src: true
+```
+
+---
+
+## 9. `template`
+
+Renders a Jinja2 file and copies the result.
+
+```yaml
+- name: Deploy nginx configuration
+  ansible.builtin.template:
+    src: nginx.conf.j2
+    dest: /etc/nginx/nginx.conf
+    mode: "0644"
+    validate: nginx -t -c %s
+  notify: Restart nginx
+```
+
+### `copy` vs `template`
+
+| Module | Use when |
+|---|---|
+| `copy` | Static file |
+| `template` | File contains variables or logic |
+
+---
+
+## 10. `lineinfile`
+
+Ensures a **single line** exists (or is removed) in a file.
+
+### Add a line if missing
+
+```yaml
+- name: Add environment variable
+  ansible.builtin.lineinfile:
+    path: /etc/environment
+    line: 'APP_ENV=production'
+    state: present
+```
+
+### Replace an existing line using `regexp`
+
+```yaml
+- name: Set SSH port
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?Port '
+    line: 'Port 2222'
+```
+
+- If `regexp` matches, the matching line is replaced (if several lines match, the **last** match is replaced).
+- If nothing matches, the line is **added at the end of the file**.
+
+### Remove a line
+
+```yaml
+- name: Remove line
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: '^10\.0\.0\.5 '
+    state: absent
+```
+
+### Insert after / before a specific line
+
+```yaml
+- name: Add line after a marker
+  ansible.builtin.lineinfile:
+    path: /etc/myapp/app.conf
+    line: 'debug=false'
+    insertafter: '^\[server\]'
+```
+
+### Common parameters
+
+| Parameter | Purpose |
+|---|---|
+| `path` | File to edit |
+| `line` | The line to ensure |
+| `regexp` | Pattern used to find the line to replace or remove |
+| `state` | `present` (default) or `absent` |
+| `insertafter` / `insertbefore` | Where to add the line |
+| `create` | Create the file if it does not exist |
+| `backup` | Keep a backup |
+| `backrefs` | Use regex capture groups; does nothing if no match |
+
+---
+
+## 11. `blockinfile`
+
+Inserts, updates, or removes a **block of multiple lines** wrapped in marker comments.
+
+```yaml
+- name: Add hosts entries
+  ansible.builtin.blockinfile:
+    path: /etc/hosts
+    block: |
+      10.0.0.11 web01
+      10.0.0.12 web02
+      10.0.0.21 db01
+```
+
+Result in the file:
+
+```
+# BEGIN ANSIBLE MANAGED BLOCK
+10.0.0.11 web01
+10.0.0.12 web02
+10.0.0.21 db01
+# END ANSIBLE MANAGED BLOCK
+```
+
+### Custom marker (recommended when managing multiple blocks)
+
+```yaml
+- name: Add proxy settings
+  ansible.builtin.blockinfile:
+    path: /etc/environment
+    marker: "# {mark} PROXY SETTINGS"
+    block: |
+      http_proxy=http://proxy.example.com:3128
+      https_proxy=http://proxy.example.com:3128
+```
+
+### Remove the block
+
+```yaml
+- name: Remove proxy settings
+  ansible.builtin.blockinfile:
+    path: /etc/environment
+    marker: "# {mark} PROXY SETTINGS"
+    state: absent
+```
+
+---
+
+## 12. `replace`
+
+Replaces **all matches** of a regex in a file.
+
+```yaml
+- name: Change log level everywhere
+  ansible.builtin.replace:
+    path: /etc/myapp/app.conf
+    regexp: 'log_level=debug'
+    replace: 'log_level=info'
+```
+
+---
+
+## 13. `lineinfile` vs `blockinfile` vs `replace` vs `template` vs `copy`
+
+| Module | Best for |
+|---|---|
+| `lineinfile` | Ensure one specific line exists / edit one line |
+| `blockinfile` | Manage a multi-line block inside an existing file |
+| `replace` | Regex replace across the whole file (all matches) |
+| `template` | Manage the entire file with variables and logic |
+| `copy` | Deploy a static file or inline content |
+
+Rule of thumb:
+
+```
+Whole file, dynamic   -> template
+Whole file, static    -> copy
+Multi-line section    -> blockinfile
+One line              -> lineinfile
+Many regex matches    -> replace
+```
+
+---
+
+## 14. `stat`
+
+Gets file or directory information. Use with `register`.
+
+```yaml
+- name: Check if config exists
+  ansible.builtin.stat:
+    path: /etc/myapp/app.conf
+  register: config_file
+
+- name: Show message
+  ansible.builtin.debug:
+    msg: "Config exists"
+  when: config_file.stat.exists
+```
+
+Useful fields: `stat.exists`, `stat.isdir`, `stat.isreg`, `stat.size`, `stat.mode`, `stat.checksum`.
+
+---
+
+## 15. `find`
+
+Searches for files.
+
+```yaml
+- name: Find log files older than 7 days
+  ansible.builtin.find:
+    paths: /var/log/myapp
+    patterns: "*.log"
+    age: 7d
+  register: old_logs
+
+- name: Delete old logs
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ old_logs.files }}"
+```
+
+---
+
+## 16. `fetch`
+
+Copies files **from the managed host to the control node** (the reverse of `copy`).
+
+```yaml
+- name: Download log file
+  ansible.builtin.fetch:
+    src: /var/log/myapp/app.log
+    dest: ./logs/
+```
+
+---
+
+## 17. `get_url`
+
+Downloads a file from a URL to the managed host.
+
+```yaml
+- name: Download application package
+  ansible.builtin.get_url:
+    url: https://example.com/app-1.0.tar.gz
+    dest: /tmp/app-1.0.tar.gz
+    checksum: sha256:abcdef123456...
+    mode: "0644"
+```
+
+---
+
+## 18. `unarchive`
+
+Extracts an archive.
+
+```yaml
+- name: Extract application archive
+  ansible.builtin.unarchive:
+    src: /tmp/app-1.0.tar.gz
+    dest: /opt/app
+    remote_src: true
+```
+
+`remote_src: true` means the archive is already on the managed host. Without it, the archive is copied from the control node first.
+
+---
+
+# Part 4: Running Commands
+
+## 19. `command`
+
+Runs a command **without a shell**. No pipes, redirects, or shell variables.
+
+```yaml
+- name: Check nginx version
+  ansible.builtin.command: nginx -v
+  register: nginx_version
+  changed_when: false
+```
+
+## 20. `shell`
+
+Runs a command **through a shell**. Supports pipes, redirects, and shell features.
+
+```yaml
+- name: Count running processes
+  ansible.builtin.shell: ps aux | grep nginx | wc -l
+  register: proc_count
+  changed_when: false
+```
+
+## 21. `raw`
+
+Sends a raw command over SSH. It does not need Python on the target.
+
+```yaml
+- name: Install Python on a minimal host
+  ansible.builtin.raw: apt-get install -y python3
+```
+
+## 22. `script`
+
+Copies a local script to the target and runs it.
+
+```yaml
+- name: Run local script on remote host
+  ansible.builtin.script: scripts/setup.sh
+```
+
+### `command` vs `shell` vs `raw`
+
+| Module | Shell features (pipes, `>`) | Needs Python on target | Idempotent |
+|---|---|---|---|
+| `command` | No | Yes | No (unless you control it) |
+| `shell` | Yes | Yes | No (unless you control it) |
+| `raw` | Yes | No | No |
+
+### Make `command` / `shell` idempotent
+
+```yaml
+- name: Run setup only once
+  ansible.builtin.command: /opt/app/setup.sh
+  args:
+    creates: /opt/app/.setup_done
+```
+
+- `creates`: skip the task if this path already exists.
+- `removes`: skip the task if this path does **not** exist.
+- `changed_when: false`: for read-only commands.
+
+Best practice: prefer a proper module (`package`, `file`, `service`) over `command`/`shell` whenever one exists.
+
+---
+
+# Part 5: Users and Access
+
+## 23. `user`
+
+```yaml
+- name: Create application user
+  ansible.builtin.user:
+    name: appuser
+    shell: /bin/bash
+    groups: docker
+    append: true
+    create_home: true
+    state: present
+```
+
+| Parameter | Purpose |
+|---|---|
+| `groups` | Supplementary groups |
+| `append: true` | Add to groups without removing existing ones |
+| `password` | Must be a **hashed** password (use `password_hash` filter) |
+| `remove: true` | With `state: absent`, also remove home directory |
+
+```yaml
+password: "{{ 'MyPassword' | password_hash('sha512') }}"
+```
+
+## 24. `group`
+
+```yaml
+- name: Create group
+  ansible.builtin.group:
+    name: appgroup
+    state: present
+```
+
+## 25. `authorized_key`
+
+Provided by `ansible.posix`.
+
+```yaml
+- name: Add SSH public key
+  ansible.posix.authorized_key:
+    user: appuser
+    key: "{{ lookup('file', 'files/appuser.pub') }}"
+    state: present
+```
+
+---
+
+# Part 6: Scheduling, Source Control, Web
+
+## 26. `cron`
+
+```yaml
+- name: Schedule daily backup at 2 AM
+  ansible.builtin.cron:
+    name: "daily backup"
+    minute: "0"
+    hour: "2"
+    job: "/opt/scripts/backup.sh"
+    user: root
+```
+
+The `name` identifies the entry, which keeps the task idempotent.
+
+## 27. `git`
+
+```yaml
+- name: Clone application repository
+  ansible.builtin.git:
+    repo: https://github.com/example/app.git
+    dest: /opt/app
+    version: main
+```
+
+## 28. `uri`
+
+Calls HTTP/HTTPS endpoints (health checks, REST APIs).
+
+```yaml
+- name: Check application health
+  ansible.builtin.uri:
+    url: http://localhost:8080/health
+    method: GET
+    status_code: 200
+  register: health
+```
+
+### POST JSON
+
+```yaml
+- name: Send data to API
+  ansible.builtin.uri:
+    url: https://api.example.com/deploy
+    method: POST
+    body_format: json
+    body:
+      app: myapp
+      version: "1.0"
+    headers:
+      Authorization: "Bearer {{ api_token }}"
+    status_code: [200, 201]
+    return_content: true
+  register: api_result
+  no_log: true
+```
+
+## 29. `wait_for`
+
+Waits for a port, file, or text.
+
+```yaml
+- name: Wait for port 8080
+  ansible.builtin.wait_for:
+    host: localhost
+    port: 8080
+    delay: 5
+    timeout: 60
+```
+
+```yaml
+- name: Wait for file
+  ansible.builtin.wait_for:
+    path: /tmp/ready.flag
+    state: present
+    timeout: 60
+```
+
+---
+
+# Part 7: Control and Debugging Modules
+
+## 30. `debug`
+
+```yaml
+- name: Show a message
+  ansible.builtin.debug:
+    msg: "Host is {{ inventory_hostname }}"
+
+- name: Show a variable
+  ansible.builtin.debug:
+    var: ansible_os_family
+```
+
+## 31. `set_fact`
+
+Creates or updates a variable during the play.
+
+```yaml
+- name: Set deployment path
+  ansible.builtin.set_fact:
+    deploy_path: "/opt/{{ app_name }}/{{ app_version }}"
+```
+
+## 32. `assert`
+
+Validates conditions and fails if they are not met.
+
+```yaml
+- name: Validate prerequisites
+  ansible.builtin.assert:
+    that:
+      - app_version is defined
+      - ansible_memtotal_mb >= 2048
+    fail_msg: "Prerequisites not met"
+```
+
+## 33. `fail`
+
+```yaml
+- name: Stop if unsupported OS
+  ansible.builtin.fail:
+    msg: "Unsupported OS: {{ ansible_distribution }}"
+  when: ansible_os_family not in ["RedHat", "Debian"]
+```
+
+## 34. `pause`
+
+```yaml
+- name: Wait 30 seconds
+  ansible.builtin.pause:
+    seconds: 30
+```
+
+## 35. `meta`
+
+```yaml
+- name: Run handlers now
+  ansible.builtin.meta: flush_handlers
+```
+
+Other useful `meta` actions: `end_play`, `end_host`, `refresh_inventory`.
+
+## 36. `include_vars`
+
+```yaml
+- name: Load environment variables
+  ansible.builtin.include_vars: "vars/{{ env_name }}.yml"
+```
+
+---
+
+# Part 8: System Modules
+
+## 37. `setup`
+
+Gathers facts (runs automatically at the start of a play unless `gather_facts: false`).
+
+```yaml
+- name: Gather only network facts
+  ansible.builtin.setup:
+    gather_subset:
+      - network
+```
+
+## 38. `reboot`
+
+```yaml
+- name: Reboot server and wait until it is back
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+```
+
+## 39. `sysctl` and `mount`
+
+```yaml
+- name: Set kernel parameter
+  ansible.posix.sysctl:
+    name: vm.swappiness
+    value: "10"
+    state: present
+    reload: true
+```
+
+```yaml
+- name: Mount volume
+  ansible.posix.mount:
+    path: /data
+    src: /dev/xvdf
+    fstype: ext4
+    state: mounted
+```
+
+---
+
+# Part 9: Practical Combined Example
+
+## 40. Web Server Setup Using Key Modules
+
+```yaml
+---
+- name: Configure web server
+  hosts: webservers
+  become: true
+
+  tasks:
+    - name: Install nginx
+      ansible.builtin.package:
+        name: nginx
+        state: present
+
+    - name: Create web root
+      ansible.builtin.file:
+        path: /var/www/app
+        state: directory
+        owner: nginx
+        group: nginx
+        mode: "0755"
+
+    - name: Deploy nginx configuration
+      ansible.builtin.template:
+        src: nginx.conf.j2
+        dest: /etc/nginx/nginx.conf
+        validate: nginx -t -c %s
+      notify: Restart nginx
+
+    - name: Set server tokens off
+      ansible.builtin.lineinfile:
+        path: /etc/nginx/conf.d/security.conf
+        line: "server_tokens off;"
+        create: true
+        mode: "0644"
+      notify: Restart nginx
+
+    - name: Add proxy settings block
+      ansible.builtin.blockinfile:
+        path: /etc/environment
+        marker: "# {mark} PROXY SETTINGS"
+        block: |
+          http_proxy=http://proxy.example.com:3128
+          https_proxy=http://proxy.example.com:3128
+
+    - name: Start and enable nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Verify nginx is responding
+      ansible.builtin.uri:
+        url: http://localhost
+        status_code: 200
+      register: web_check
+      until: web_check.status == 200
+      retries: 5
+      delay: 5
+
+  handlers:
+    - name: Restart nginx
+      ansible.builtin.service:
+        name: nginx
+        state: restarted
+```
+
+---
+
+# Part 10: Interview Revision
+
+## 41. Common Interview Questions
+
+### Q1. What is a module in Ansible?
+
+A module is a small program that Ansible runs on a target host to perform a specific task, such as installing a package or managing a service.
+
+### Q2. Is `block` a module?
+
+No. `block` is a task keyword used to group tasks and add error handling with `rescue` and `always`.
+
+### Q3. Difference between `package` and `apt` / `yum`?
+
+`package` is generic and picks the right package manager. `apt` and `yum`/`dnf` are OS-specific and offer more options (for example `update_cache` for `apt`).
+
+### Q4. Difference between `service` and `systemd`?
+
+`service` is generic across init systems. `systemd` supports systemd-specific options like `daemon_reload` and `masked`.
+
+### Q5. What does the `file` module do?
+
+Manages files, directories, symlinks, permissions, and ownership. It can create directories and empty files but not files with content.
+
+### Q6. Difference between `copy` and `template`?
+
+`copy` transfers a static file; `template` renders a Jinja2 file with variables first.
+
+### Q7. What does `lineinfile` do?
+
+Ensures a specific line is present, replaced (with `regexp`), or removed in a file.
+
+### Q8. Difference between `lineinfile` and `blockinfile`?
+
+`lineinfile` manages a single line. `blockinfile` manages a multi-line block wrapped in marker comments.
+
+### Q9. Difference between `lineinfile` and `replace`?
+
+`lineinfile` works on one line (last match). `replace` changes all regex matches in the file.
+
+### Q10. Difference between `command`, `shell`, and `raw`?
+
+`command` runs without a shell. `shell` supports pipes and redirects. `raw` needs no Python on the target.
+
+### Q11. How do you make `command` idempotent?
+
+Use `creates`, `removes`, or `changed_when`.
+
+### Q12. How do you check whether a file exists?
+
+Use `stat` with `register`, then check `stat.exists`.
+
+### Q13. What does `state: latest` do?
+
+Installs the package if missing, or upgrades it to the latest available version.
+
+### Q14. How do you set a user's password?
+
+Provide a hashed password, for example `"{{ pwd | password_hash('sha512') }}"`.
+
+### Q15. How do you wait for a service to be ready?
+
+Use `wait_for` for ports and files, or `uri` with `until`, `retries`, and `delay` for HTTP checks.
+
+### Q16. What does `remote_src: true` mean?
+
+The source file is already on the managed host, not on the control node.
+
+### Q17. Which module creates a symlink?
+
+`file` with `state: link`.
+
+### Q18. How do you validate a config before applying it?
+
+Use `validate:` on `template`, `copy`, or `lineinfile`.
+
+---
+
+## 42. Quick Revision Table
+
+| Task | Module |
+|---|---|
+| Install package | `package` / `apt` / `dnf` |
+| Start / stop service | `service` / `systemd` |
+| Create dir / set permissions / symlink | `file` |
+| Copy static file | `copy` |
+| Render config with variables | `template` |
+| Edit one line | `lineinfile` |
+| Edit multi-line section | `blockinfile` |
+| Regex replace all matches | `replace` |
+| Check file exists | `stat` |
+| Find files | `find` |
+| Pull file from remote | `fetch` |
+| Download from URL | `get_url` |
+| Extract archive | `unarchive` |
+| Run command | `command` / `shell` |
+| Create user / group | `user` / `group` |
+| Schedule job | `cron` |
+| Clone repo | `git` |
+| HTTP call / health check | `uri` |
+| Wait for port/file | `wait_for` |
+| Show output | `debug` |
+| Set variable | `set_fact` |
+| Validate / stop | `assert` / `fail` |
+| Reboot | `reboot` |
+| Gather facts | `setup` |
+
+### Memory Trick
+
+```
+package   -> install software
+service   -> run software
+file      -> create / permissions / delete
+copy      -> static file
+template  -> dynamic file
+lineinfile  -> one line
+blockinfile -> many lines
+replace     -> regex everywhere
+command/shell -> last resort
+```
+
+---
+
+## 43. Interview Answer
+
+The modules I use most are `package` for installing software, `service` or `systemd` for managing services, `file` for directories, permissions and symlinks, `copy` and `template` for deploying files, and `lineinfile`, `blockinfile` and `replace` for editing existing files. I use `lineinfile` for a single line, `blockinfile` for a multi-line section, and `template` when I own the entire file. I avoid `command` and `shell` when a proper module exists, and when I must use them I add `creates`, `removes`, or `changed_when` to keep them idempotent. `block` is not a module; it is a keyword for grouping tasks and handling errors with `rescue` and `always`.
