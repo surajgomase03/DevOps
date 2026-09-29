@@ -1,29 +1,4 @@
-# ☸ KUBERNETES — V1 July 2025 | Notes & Concepts (Enhanced Edition)
-
-> **Version:** V1 | **Month:** July 2025 | **Status:** Active  
-> **Author:** Suraj Gomase | TCS | CMG Project | Senior DevOps / SRE  
-> **Rule:** Add new topics to THIS FILE throughout July 2025  
-> **Next Version:** V2_August2025 starts August 2025 — zero duplication from V1
-
----
-
-## 📋 VERSION REGISTRY
-
-### Topics Covered in V1 (V2 must NOT duplicate)
-
-| Range | Sections |
-|---|---|
-| S01–S12 | Architecture, Pods, ReplicaSet, Deployments, Services & DNS, Networking, Ingress, Network Policies, Storage, ConfigMaps & Secrets, StatefulSet, DaemonSet |
-| S13–S23 | Jobs & CronJobs, Scheduling, RBAC & Security, Pod Security Standards, HA, Scaling, Observability, Cluster Upgrade, EKS, Service Mesh, Cheat Sheet |
-| S24–S36 | **NEW July 2025:** Labels/Annotations/Finalizers, env/envFrom/Downward API, Gateway API, Volumes, Priority Classes, Auth & Authorization, Image Security & TLS, Helm, ArgoCD & FluxCD, CRDs & Operators, kubeadm/Kind/Minikube, Backup & DR, YAML Mistakes |
-
-### Monthly Versioning Rules
-- **Same month** → add content to THIS file
-- **New month** → create V2_August2025 file, zero duplication
-- **Cross-reference** → V2 uses "See V1-July2025 Section SXX" for overlap
-- **Uploaded file** = master copy — preserve all manual edits
-
----
+# ☸ KUBERNETES Notes & Concepts 
 
 # PHASE 1 — FUNDAMENTALS
 
