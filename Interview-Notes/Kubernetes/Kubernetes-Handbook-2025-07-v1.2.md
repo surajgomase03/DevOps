@@ -5095,89 +5095,821 @@ App container (stdout/stderr)
 
 ## S20 — CLUSTER & NODE UPGRADE
 
-**WHAT:** Cluster upgrade updates K8s version (control plane + workers) while keeping workloads running with zero downtime.
+# Kubernetes Cluster & Node Upgrade
 
-**WHY:** Old K8s = missing security patches, deprecated APIs, loss of new features. ~14 months support per version.
+Upgrading Kubernetes safely is mainly about **version compatibility, workload availability, backups, and rollback planning**.
 
-**HOW:** EKS: control plane first (AWS managed, ~15min), then add-ons, then node groups (rolling: cordon→drain→terminate→new node→join). PDBs protect min replicas.
-
-### Pre-Upgrade Checklist
-
-```bash
-# 1. Check current version
-kubectl version --short
-
-# 2. Find deprecated APIs in Helm charts
-pluto detect-files -d . --target-versions k8s=v1.29
-
-# 3. Verify PDBs in place
-kubectl get pdb -A
-
-# 4. Velero backup
-velero backup create pre-upgrade-$(date +%Y%m%d) --wait
-
-# 5. Test in STAGING first!
-# 6. Check add-on compatibility matrix
-# 7. Notify teams of maintenance window
+```text
+Cluster Upgrade
+       |
+       +-- Control Plane Upgrade
+       |
+       +-- Worker Node Upgrade
+       |
+       +-- Application Validation
+       |
+       +-- Rollback / Recovery Plan
 ```
 
-### EKS Upgrade Steps
+---
 
-```bash
-# Step 1: Control plane (AWS managed, ~15min, no workload impact)
-aws eks update-cluster-version --region eu-west-2 --name cmg-eks --kubernetes-version 1.29
+# 1. Why do we upgrade Kubernetes?
 
-# Monitor
-aws eks describe-cluster --name cmg-eks --query 'cluster.status'
-# UPDATING → ACTIVE
+Common reasons:
 
-# Step 2: Update add-ons
-aws eks update-addon --cluster-name cmg-eks --addon-name vpc-cni --addon-version v1.15.5-eksbuild.2
-aws eks update-addon --cluster-name cmg-eks --addon-name coredns --addon-version v1.11.1-eksbuild.6
-aws eks update-addon --cluster-name cmg-eks --addon-name kube-proxy --addon-version v1.29.1-eksbuild.2
-aws eks update-addon --cluster-name cmg-eks --addon-name aws-ebs-csi-driver --addon-version v1.28.0-eksbuild.1
+* Security patches
+* Bug fixes
+* New Kubernetes features
+* CNI/CSI compatibility
+* Container runtime updates
+* Vendor/cloud support requirements
+* Kubernetes version lifecycle
 
-# Step 3: Node groups (rolling — PDB respected)
-aws eks update-nodegroup-version --cluster-name cmg-eks --nodegroup-name cmg-app-nodes --kubernetes-version 1.29
-kubectl get nodes -w   # watch: old node → cordoned → drained → terminated → new node joins
+---
 
-# Step 4: Post-upgrade validation
-kubectl get nodes -o wide          # all on new version
-kubectl get pods -A                # all Pods healthy
-curl -f https://api.cmg.gov.uk/health  # smoke test
-velero backup create post-upgrade-$(date +%Y%m%d) --wait
+# 2. Cluster Upgrade vs Node Upgrade
+
+### Cluster upgrade
+
+Usually means upgrading the **Kubernetes control plane** and associated cluster components.
+
+```text
+API Server
+Scheduler
+Controller Manager
+etcd
 ```
 
-### Self-Managed (kubeadm) Node Upgrade
+### Node upgrade
+
+Means upgrading individual worker nodes and often:
+
+* kubelet
+* kube-proxy
+* OS packages
+* container runtime
+
+```text
+Worker Node
+├── kubelet
+├── kube-proxy
+├── container runtime
+└── Pods
+```
+
+---
+
+# 3. Golden Rule ⭐
+
+> **Upgrade the control plane first, then upgrade worker nodes.**
+
+Typical sequence:
+
+```text
+Backup
+  ↓
+Pre-checks
+  ↓
+Control Plane Upgrade
+  ↓
+CNI / CSI / Add-on Validation
+  ↓
+Worker Node 1
+  ↓
+Worker Node 2
+  ↓
+Worker Node 3
+  ↓
+Application Validation
+```
+
+---
+
+# 4. Before Upgrade — Pre-checks
+
+First check the current cluster.
 
 ```bash
-# On control plane
-apt-get install -y kubeadm=1.29.0-00
+kubectl version
+kubectl get nodes
+kubectl get pods -A
+kubectl get events -A --sort-by=.lastTimestamp
+```
+
+Check node health:
+
+```bash
+kubectl get nodes -o wide
+```
+
+You want:
+
+```text
+STATUS = Ready
+```
+
+Also check:
+
+* Current Kubernetes version
+* Target version
+* Node versions
+* CNI version
+* CSI drivers
+* Ingress controller
+* CoreDNS
+* kube-proxy
+* Helm applications
+* CRDs/operators
+* API deprecations
+* PodDisruptionBudgets
+* Resource capacity
+
+---
+
+# 5. Backup Before Upgrade
+
+This is very important.
+
+### etcd backup
+
+For self-managed clusters, take an etcd snapshot according to your cluster's etcd tooling/version.
+
+Conceptually:
+
+```text
+Kubernetes
+    |
+    v
+  etcd
+    |
+    v
+Backup
+```
+
+Also ensure you have:
+
+* Application data backups
+* Persistent volume backups/snapshots where appropriate
+* Configuration in Git
+* Helm values
+* Important manifests
+* Disaster recovery procedure
+
+### Interview answer
+
+> **Before a Kubernetes upgrade, I take and verify backups, especially the etcd state for self-managed clusters, and make sure application data and configuration can be restored.**
+
+---
+
+# 6. Check API Deprecations
+
+This is one of the most important upgrade activities.
+
+An old resource may work in Kubernetes version `N` but be removed in `N+1`.
+
+Example:
+
+```text
+Old API
+apps/v1beta1 ❌
+
+New API
+apps/v1 ✅
+```
+
+Before upgrading:
+
+```text
+Check workloads
+      ↓
+Check API versions
+      ↓
+Replace deprecated APIs
+      ↓
+Upgrade
+```
+
+Tools such as `kubent` can help identify deprecated Kubernetes APIs, but always validate findings against the target Kubernetes version and vendor documentation.
+
+---
+
+# 7. Control Plane Upgrade
+
+For a kubeadm-managed cluster, the process generally looks like:
+
+```text
+Control Plane 1
+      ↓
+Control Plane 2
+      ↓
+Control Plane 3
+```
+
+For HA control planes, upgrade them **one at a time** while maintaining quorum and API availability.
+
+Typical kubeadm flow:
+
+```bash
 kubeadm upgrade plan
-kubeadm upgrade apply v1.29.0
-apt-get install -y kubelet=1.29.0-00 kubectl=1.29.0-00
-systemctl daemon-reload && systemctl restart kubelet
+```
 
-# Per worker node
-kubectl drain worker-1 --ignore-daemonsets --delete-emptydir-data
-# On worker-1:
-apt-get install -y kubeadm=1.29.0-00 kubelet=1.29.0-00 kubectl=1.29.0-00
-kubeadm upgrade node
-systemctl daemon-reload && systemctl restart kubelet
-# Back on control plane:
+Then perform the appropriate version-specific upgrade steps.
+
+After upgrading the control plane:
+
+```bash
+kubectl get nodes
+kubectl get pods -A
+```
+
+Validate:
+
+```text
+API Server       ✅
+Scheduler        ✅
+Controller       ✅
+etcd             ✅
+CoreDNS          ✅
+CNI              ✅
+CSI              ✅
+```
+
+**Exact kubeadm commands vary by Kubernetes release**, so use the documentation for the target version rather than blindly reusing commands from an older upgrade guide.
+
+---
+
+# 8. Worker Node Upgrade
+
+Don't upgrade all worker nodes simultaneously.
+
+Use:
+
+```text
+Node 1
+  ↓
+Drain
+  ↓
+Upgrade
+  ↓
+Uncordon
+  ↓
+Validate
+  ↓
+Node 2
+```
+
+---
+
+# 9. What is `cordon`?
+
+```bash
+kubectl cordon worker-1
+```
+
+Cordon means:
+
+> **Don't schedule new Pods on this node.**
+
+Existing Pods continue running.
+
+```text
+worker-1
+├── Existing Pod A ✅
+├── Existing Pod B ✅
+└── New Pod         ❌
+```
+
+---
+
+# 10. What is `drain`?
+
+```bash
+kubectl drain worker-1 --ignore-daemonsets
+```
+
+Drain:
+
+> **Evicts eligible workloads from the node so it can be safely maintained.**
+
+Example:
+
+```text
+Before:
+
+Node 1
+ ├── Pod A
+ ├── Pod B
+ └── Pod C
+
+        ↓ drain
+
+Node 1
+ └── No normal workloads
+
+Pods move/recreated elsewhere
+```
+
+The exact behavior depends on workload type, PDBs, local storage, DaemonSets, and other constraints.
+
+---
+
+# 11. Upgrade the Node
+
+After draining:
+
+```text
+Node
+ ↓
+Upgrade OS/packages
+ ↓
+Upgrade kubelet
+ ↓
+Upgrade kube-proxy if applicable
+ ↓
+Upgrade container runtime if required
+ ↓
+Restart services if required
+```
+
+Then verify:
+
+```bash
+systemctl status kubelet
+kubectl get node worker-1
+```
+
+---
+
+# 12. Uncordon
+
+After the node is healthy:
+
+```bash
 kubectl uncordon worker-1
 ```
 
-### Upgrade Risks
+Now Kubernetes can schedule new Pods there again.
 
-| Risk | Impact | Mitigation |
-|---|---|---|
-| API deprecations | Apps break post-upgrade | Run `pluto` BEFORE upgrading |
-| No PDB | Mass eviction → outage | Set `minAvailable` before upgrade |
-| Add-on incompatibility | Addons fail on new K8s | Check compatibility matrix |
-| No rollback possible | K8s has no version downgrade | Velero backup is ONLY safety net |
+```text
+worker-1
+   |
+   +-- Scheduling enabled ✅
+```
 
 ---
+
+# 13. Complete Worker Upgrade Flow
+
+```text
+Worker Node
+     |
+     v
+Check health
+     |
+     v
+Cordon
+     |
+     v
+Drain
+     |
+     v
+Upgrade OS / kubelet / runtime
+     |
+     v
+Restart if required
+     |
+     v
+Check node
+     |
+     v
+Uncordon
+     |
+     v
+Run application tests
+     |
+     v
+Next node
+```
+
+---
+
+# 14. Why Don't We Upgrade All Nodes Together?
+
+Suppose:
+
+```text
+3 Worker Nodes
+```
+
+If you upgrade all simultaneously:
+
+```text
+Node 1 ❌
+Node 2 ❌
+Node 3 ❌
+```
+
+Your application can become unavailable.
+
+Instead:
+
+```text
+Node 1 → Upgrade → Validate
+Node 2 → Upgrade → Validate
+Node 3 → Upgrade → Validate
+```
+
+This maintains capacity during the upgrade.
+
+---
+
+# 15. PodDisruptionBudget During Upgrade
+
+Suppose:
+
+```text
+Deployment
+replicas: 3
+```
+
+And:
+
+```yaml
+minAvailable: 2
+```
+
+During a node drain:
+
+```text
+Pod 1 → Node 1
+Pod 2 → Node 2
+Pod 3 → Node 3
+```
+
+You shouldn't voluntarily disrupt too many Pods at once.
+
+PDB helps protect application availability during voluntary disruptions.
+
+---
+
+# 16. Important Problem — Single Replica
+
+Suppose:
+
+```text
+Deployment
+replicas: 1
+```
+
+And the only Pod is:
+
+```text
+Node 1
+   |
+   └── Application Pod
+```
+
+You drain Node 1.
+
+The application may experience downtime depending on the workload and scheduling situation.
+
+Better:
+
+```text
+replicas: 3
+
+Node 1 → Pod 1
+Node 2 → Pod 2
+Node 3 → Pod 3
+```
+
+---
+
+# 17. DaemonSets
+
+When draining a node, you'll often see:
+
+```text
+Cannot delete DaemonSet-managed Pods
+```
+
+That's why commonly:
+
+```bash
+kubectl drain worker-1 --ignore-daemonsets
+```
+
+DaemonSets are designed to run a Pod on selected nodes, such as:
+
+* CNI agents
+* node monitoring agents
+* log collectors
+
+You generally don't manually migrate these like ordinary Deployment Pods.
+
+---
+
+# 18. Local Data
+
+Be careful with Pods using local storage.
+
+For example:
+
+```text
+Pod
+ ↓
+emptyDir / local storage
+```
+
+Draining/recreating the Pod may cause data loss depending on the storage type and workload.
+
+Before upgrading:
+
+> Identify workloads using local storage and understand their recovery behavior.
+
+---
+
+# 19. Stateful Applications
+
+Stateful applications require extra care.
+
+Example:
+
+```text
+Database
+   |
+Persistent Volume
+   |
+Node
+```
+
+Before upgrading:
+
+* Verify backups
+* Check replication
+* Check storage health
+* Understand failover
+* Upgrade one node/workload at a time
+* Validate data integrity
+
+For databases, **application-level HA and backup strategy are critical**; Kubernetes node draining alone doesn't make the database highly available.
+
+---
+
+# 20. Post-Upgrade Validation
+
+After upgrading:
+
+```bash
+kubectl get nodes
+```
+
+Check:
+
+```text
+All nodes → Ready
+Versions → expected
+```
+
+Then:
+
+```bash
+kubectl get pods -A
+```
+
+Look for:
+
+```text
+Running
+Completed
+```
+
+and investigate:
+
+```text
+CrashLoopBackOff
+ImagePullBackOff
+Pending
+Error
+```
+
+Check:
+
+```bash
+kubectl get events -A
+```
+
+Test:
+
+```text
+DNS
+Service connectivity
+Ingress
+Application APIs
+Database connectivity
+Persistent volumes
+Monitoring
+Logging
+Autoscaling
+```
+
+---
+
+# 21. Upgrade Validation Checklist
+
+```text
+Control Plane
+ ├── API Server ✅
+ ├── Scheduler ✅
+ ├── Controller Manager ✅
+ └── etcd ✅
+
+Nodes
+ ├── Ready ✅
+ ├── kubelet ✅
+ └── Runtime ✅
+
+Networking
+ ├── CNI ✅
+ ├── CoreDNS ✅
+ └── Service networking ✅
+
+Storage
+ ├── CSI ✅
+ └── PV/PVC ✅
+
+Applications
+ ├── Pods ✅
+ ├── Services ✅
+ ├── Ingress ✅
+ ├── HPA ✅
+ └── PDB ✅
+
+Observability
+ ├── Monitoring ✅
+ └── Logging ✅
+```
+
+---
+
+# 22. Rollback / Failure Plan
+
+A senior engineer should **not assume an upgrade can simply be reversed**.
+
+Plan for:
+
+```text
+Upgrade
+   |
+   +── Success → Continue
+   |
+   └── Failure
+          |
+          +── Stop further nodes
+          |
+          +── Investigate
+          |
+          +── Restore/recover if required
+          |
+          +── Use documented rollback procedure
+```
+
+For cluster upgrades, rollback options depend heavily on the upgrade method, Kubernetes distribution, component versions, and the failure. That's why **backup + tested disaster recovery** is more important than assuming a simple version downgrade will work.
+
+---
+
+# ⭐ Senior Interview Answer
+
+If interviewer asks:
+
+### "How do you perform a Kubernetes cluster upgrade?"
+
+Say:
+
+> **First I check the current and target versions, Kubernetes version compatibility, deprecated APIs, CNI/CSI and add-on compatibility, node health and resource capacity. I take and verify backups, especially etcd for self-managed clusters. Then I upgrade the control plane according to the distribution's supported procedure. After validating the control plane and add-ons, I upgrade worker nodes one at a time: cordon, drain, upgrade kubelet/runtime or OS as required, validate the node, and uncordon it. I monitor PDBs and application availability throughout the process and perform post-upgrade validation of networking, storage, DNS, ingress, workloads, monitoring and application functionality.**
+
+### 🧠 Remember this sequence
+
+```text
+BACKUP
+   ↓
+CHECK COMPATIBILITY
+   ↓
+CHECK DEPRECATED APIs
+   ↓
+CONTROL PLANE
+   ↓
+VALIDATE
+   ↓
+CORDON
+   ↓
+DRAIN
+   ↓
+UPGRADE NODE
+   ↓
+VALIDATE
+   ↓
+UNCORDON
+   ↓
+NEXT NODE
+   ↓
+FINAL VALIDATION
+```
+
+**Interview keywords:** `backup → compatibility → deprecated APIs → control plane → cordon → drain → PDB → one node at a time → uncordon → validation → rollback/DR`.
+
+---
+
+# 23. Quick Reference (Extra)
+
+## 23.1 Version skew rules
+
+| Rule | Detail |
+| --- | --- |
+| Upgrade one **minor version at a time** | For example 1.30 → 1.31 → 1.32. Don't skip minors on the control plane |
+| **kubelet** vs API server | kubelet must **not be newer** than the API server. It can be older (up to 3 minor versions on Kubernetes 1.28+, 2 on older releases) |
+| **kubectl** vs API server | Within **one minor version** (older or newer) |
+| Control plane components | Upgrade the API server first, then the other control plane components |
+
+> Always confirm the exact skew policy for your target version in the official Kubernetes docs.
+
+## 23.2 Typical kubeadm command flow
+
+Commands and package names vary by release. Check the target version's upgrade guide.
+
+```bash
+# First control plane node
+kubeadm upgrade plan
+kubeadm upgrade apply v<target-version>
+
+# Other control plane nodes and worker nodes
+kubeadm upgrade node
+
+# On each node, after upgrading the kubelet/kubectl packages
+systemctl daemon-reload
+systemctl restart kubelet
+```
+
+## 23.3 etcd snapshot (self-managed)
+
+```bash
+ETCDCTL_API=3 etcdctl snapshot save /backup/etcd-$(date +%F).db \
+  --endpoints=https://127.0.0.1:2379 \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key
+
+ETCDCTL_API=3 etcdctl snapshot status /backup/etcd-$(date +%F).db
+```
+
+## 23.4 Node maintenance commands
+
+```bash
+kubectl cordon worker-1
+kubectl drain worker-1 --ignore-daemonsets --delete-emptydir-data
+# ... upgrade the node ...
+kubectl uncordon worker-1
+```
+
+| Flag | Meaning |
+| --- | --- |
+| `--ignore-daemonsets` | Skip DaemonSet-managed Pods (they can't be evicted normally) |
+| `--delete-emptydir-data` | Allow eviction of Pods using `emptyDir`. The data is **lost** |
+| `--timeout=300s` | Stop waiting after a set time |
+
+## 23.5 Useful checks during the upgrade
+
+```bash
+kubectl get nodes -o wide                 # versions and status
+kubectl get pdb -A                        # PodDisruptionBudgets
+kubectl get pods -A -o wide | grep -v Running
+kubectl rollout status deploy/<name> -n <namespace>
+kubectl get events -A --sort-by=.lastTimestamp
+```
+
+## 23.6 Managed clusters (Amazon EKS)
+
+On EKS, AWS upgrades the control plane. You upgrade node groups and add-ons.
+
+```text
+Backup / pre-checks
+        ↓
+Upgrade control plane (one minor version at a time)
+        ↓
+Upgrade add-ons (vpc-cni, CoreDNS, kube-proxy)
+        ↓
+Upgrade node groups (rolling)
+        ↓
+Validate
+```
+
+```bash
+aws eks update-cluster-version --name <cluster> --kubernetes-version <version>
+aws eks update-nodegroup-version --cluster-name <cluster> --nodegroup-name <nodegroup>
+```
+
+* Managed node groups replace nodes in a rolling way and respect PodDisruptionBudgets.
+* An EKS control plane version **cannot be downgraded**, which is another reason to test in a non-production cluster first.
 
 ## S21 — EKS (AWS ELASTIC KUBERNETES SERVICE)
 
