@@ -12189,3 +12189,904 @@ kubectl get nodes
 
 **Master Rapid Fire entries added:** 17 new Q→A entries (commands, scheduling, storage)
 
+
+# Kubernetes HA and Security
+
+For interviews, think of Kubernetes in **two separate areas**:
+
+```text
+Kubernetes
+├── HA (High Availability)
+│   └── Keep cluster/application available when components fail
+│
+└── Security
+    └── Protect cluster, workloads, network, secrets and access
+```
+
+---
+
+# 1. HA — High Availability
+
+### What is HA?
+
+**High Availability means designing Kubernetes so that failure of a node or component does not bring the application or cluster down.**
+
+---
+
+## Kubernetes HA Architecture
+
+```text
+                  Load Balancer
+                       |
+          +------------+------------+
+          |            |            |
+          v            v            v
+     API Server 1  API Server 2  API Server 3
+          |            |            |
+          +------------+------------+
+                       |
+                     etcd
+                  /    |    \
+               etcd1  etcd2  etcd3
+
+        Worker Node 1   Worker Node 2   Worker Node 3
+             |               |               |
+            Pods            Pods            Pods
+```
+
+### Control Plane HA
+
+For production:
+
+* Multiple **kube-apiserver** instances
+* Multiple **controller-manager** instances
+* Multiple **scheduler** instances
+* Highly available **etcd**
+* Load balancer in front of API servers
+
+Important:
+
+> `kube-apiserver` is generally made highly available by running multiple instances behind a load balancer.
+
+---
+
+# 2. etcd HA
+
+`etcd` stores Kubernetes cluster state.
+
+For HA, use an odd number of etcd members, commonly:
+
+```text
+3 etcd nodes
+```
+
+or
+
+```text
+5 etcd nodes
+```
+
+Why odd numbers?
+
+Because etcd uses quorum.
+
+### Example: 3-node etcd
+
+```text
+etcd1
+etcd2
+etcd3
+```
+
+Majority/quorum:
+
+```text
+2 out of 3
+```
+
+If one fails:
+
+```text
+etcd1 ❌
+etcd2 ✅
+etcd3 ✅
+
+Quorum = 2
+Cluster can continue
+```
+
+If two fail:
+
+```text
+etcd1 ❌
+etcd2 ❌
+etcd3 ✅
+
+Quorum lost
+```
+
+---
+
+# 3. Worker Node HA
+
+Don't put all replicas on one node.
+
+Bad:
+
+```text
+Node 1
+ ├── Pod A
+ ├── Pod B
+ └── Pod C
+```
+
+If Node 1 fails → all replicas disappear.
+
+Better:
+
+```text
+Node 1 → Pod A
+Node 2 → Pod B
+Node 3 → Pod C
+```
+
+Use:
+
+* `topologySpreadConstraints`
+* Pod anti-affinity
+* node affinity
+* appropriate resource requests
+
+---
+
+# 4. Replica HA
+
+Use:
+
+```yaml
+replicas: 3
+```
+
+Example:
+
+```text
+Deployment
+    |
+    +-- Pod 1 → Node 1
+    +-- Pod 2 → Node 2
+    +-- Pod 3 → Node 3
+```
+
+If one Pod fails:
+
+```text
+Pod 2 ❌
+
+Deployment/ReplicaSet
+        |
+        v
+creates replacement Pod
+```
+
+---
+
+# 5. PodDisruptionBudget — PDB
+
+PDB protects applications during **voluntary disruptions**, such as:
+
+* Node maintenance
+* Cluster upgrades
+* Node draining
+
+Example:
+
+```yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: backend-pdb
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: backend
+```
+
+Meaning:
+
+> Kubernetes should try to keep at least 2 matching Pods available during voluntary disruptions.
+
+### Important interview point
+
+PDB does **not** protect against every failure.
+
+For example:
+
+```text
+Node suddenly crashes
+```
+
+PDB cannot prevent that.
+
+---
+
+# 6. Application HA
+
+For stateless application:
+
+```text
+Deployment
+    ↓
+3+ replicas
+    ↓
+Service
+    ↓
+Ingress / Load Balancer
+```
+
+For stateful applications:
+
+```text
+StatefulSet
+     +
+Persistent Volumes
+     +
+Application-level replication
+     +
+Backup/restore
+```
+
+Kubernetes itself does not automatically make your database highly available just because it runs inside a StatefulSet.
+
+---
+
+# 7. HA Interview Checklist
+
+Remember:
+
+```text
+HA
+├── Multiple Control Plane nodes
+├── API Servers behind Load Balancer
+├── etcd quorum
+├── Multiple Worker Nodes
+├── Multiple Pod replicas
+├── Spread Pods across nodes/zones
+├── PodDisruptionBudget
+├── Readiness probes
+├── Liveness/startup probes
+├── Resource requests/limits
+└── Backup + disaster recovery
+```
+
+---
+
+# 🔐 Kubernetes Security
+
+Kubernetes security should be considered in multiple layers.
+
+```text
+                 Kubernetes Security
+                         |
+       +-----------------+-----------------+
+       |                 |                 |
+   Access             Workload          Network
+   Security           Security          Security
+       |                 |                 |
+     RBAC          SecurityContext    NetworkPolicy
+     IAM           Non-root           TLS
+     Authentication Capabilities      Encryption
+```
+
+---
+
+# 8. Authentication
+
+First question:
+
+> **Who are you?**
+
+Examples:
+
+* Kubernetes certificates
+* OIDC
+* Cloud IAM
+* Service accounts
+
+```text
+User
+ ↓
+Authentication
+ ↓
+"Who is this?"
+```
+
+Authentication ≠ authorization.
+
+---
+
+# 9. Authorization — RBAC
+
+RBAC = **Role-Based Access Control**
+
+It answers:
+
+> **What are you allowed to do?**
+
+Example:
+
+```text
+Developer
+   |
+   v
+Role
+   |
+   +-- get Pods
+   +-- list Pods
+   +-- get Services
+```
+
+Important objects:
+
+```text
+Role
+ClusterRole
+RoleBinding
+ClusterRoleBinding
+```
+
+### Namespace-level
+
+```text
+Role + RoleBinding
+```
+
+### Cluster-level
+
+```text
+ClusterRole + ClusterRoleBinding
+```
+
+### Interview answer
+
+> RBAC controls which users, groups, or service accounts can perform which actions on Kubernetes resources.
+
+---
+
+# 10. Service Account Security
+
+Pods can use a ServiceAccount to access the Kubernetes API.
+
+Don't give unnecessary permissions.
+
+Bad:
+
+```text
+Pod
+ ↓
+cluster-admin
+```
+
+Better:
+
+```text
+Pod
+ ↓
+Dedicated ServiceAccount
+ ↓
+Minimal required RBAC permissions
+```
+
+Also consider:
+
+```yaml
+automountServiceAccountToken: false
+```
+
+when the application does not need to communicate with the Kubernetes API.
+
+---
+
+# 11. Pod Security
+
+Use `securityContext`.
+
+Important controls:
+
+```yaml
+securityContext:
+  runAsNonRoot: true
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+```
+
+Also consider:
+
+* `seccomp`
+* AppArmor
+* SELinux
+* Pod Security Admission
+* Avoid `privileged: true`
+
+---
+
+# 12. Run Containers as Non-Root
+
+Avoid:
+
+```text
+root
+```
+
+Prefer:
+
+```text
+UID 1000
+```
+
+Example:
+
+```yaml
+securityContext:
+  runAsUser: 1000
+  runAsNonRoot: true
+```
+
+Why?
+
+If an attacker exploits the application, running as non-root can reduce the potential impact.
+
+---
+
+# 13. Network Security
+
+Use **NetworkPolicy**.
+
+Without restrictions:
+
+```text
+Pod A → Pod B
+Pod A → Pod C
+Pod A → Database
+Pod A → Everything
+```
+
+With NetworkPolicy:
+
+```text
+Frontend
+   |
+   | allowed
+   v
+Backend
+   |
+   | allowed
+   v
+Database
+```
+
+Example concept:
+
+```text
+Frontend → Backend → Database
+```
+
+but:
+
+```text
+Frontend ─X→ Database
+```
+
+NetworkPolicy controls allowed network communication between Pods/namespaces and, depending on the CNI implementation, other traffic sources/destinations.
+
+---
+
+# 14. Secrets Security
+
+Don't put passwords directly in Deployment YAML.
+
+Bad:
+
+```yaml
+env:
+  - name: DB_PASSWORD
+    value: "mypassword123"
+```
+
+Use:
+
+```text
+Kubernetes Secret
+       |
+       v
+Pod
+```
+
+But remember:
+
+> Kubernetes Secrets are not automatically equivalent to an external secrets manager, and their security depends on cluster configuration and access controls.
+
+For stronger environments, organizations may integrate:
+
+* HashiCorp Vault
+* AWS Secrets Manager
+* Azure Key Vault
+* Google Secret Manager
+
+---
+
+# 15. API Server Security
+
+Protect the Kubernetes API server using:
+
+* Authentication
+* Authorization/RBAC
+* Admission controls
+* TLS
+* Network restrictions
+* Audit logging
+* Least privilege
+
+Flow:
+
+```text
+kubectl
+   |
+   v
+API Server
+   |
+   +--> Authentication
+   |
+   +--> Authorization
+   |
+   +--> Admission
+   |
+   v
+etcd / Kubernetes resources
+```
+
+---
+
+# 16. Encryption
+
+Use encryption for sensitive data.
+
+Two important areas:
+
+### Data in transit
+
+Use TLS:
+
+```text
+Client
+  |
+ HTTPS/TLS
+  |
+API Server
+```
+
+### Data at rest
+
+Sensitive data stored in systems such as etcd can be protected using encryption-at-rest mechanisms.
+
+---
+
+# 17. Image Security
+
+Before deploying containers:
+
+```text
+Developer
+   ↓
+Container Image
+   ↓
+Image Scan
+   ↓
+Vulnerability Check
+   ↓
+Registry
+   ↓
+Kubernetes
+```
+
+Use:
+
+* Trusted base images
+* Minimal images
+* Vulnerability scanning
+* Image signing/verification where adopted
+* Private registries
+* Regular image updates
+
+Examples of scanning tools:
+
+* Trivy
+* Snyk
+* cloud/container registry scanning tools
+
+---
+
+# 18. Admission Control
+
+Admission happens after authentication/authorization and before the API request is persisted.
+
+```text
+Request
+   ↓
+Authentication
+   ↓
+Authorization
+   ↓
+Admission Control
+   ↓
+Validation
+   ↓
+etcd
+```
+
+Admission can enforce security policies such as:
+
+```text
+❌ Don't allow privileged Pods
+❌ Don't allow images from untrusted registry
+❌ Require resource limits
+❌ Require labels
+```
+
+Modern Kubernetes commonly uses **Pod Security Admission** for Pod Security Standards.
+
+---
+
+# 19. HA + Security Together
+
+A good production Kubernetes design:
+
+```text
+                    Users
+                      |
+                Load Balancer
+                      |
+          +-----------+-----------+
+          |           |           |
+       API-1       API-2       API-3
+          \           |           /
+           \        etcd         /
+            \      quorum       /
+             \       |         /
+              Kubernetes
+                   |
+       +-----------+-----------+
+       |           |           |
+     Node 1      Node 2      Node 3
+       |           |           |
+      Pods        Pods        Pods
+       \           |           /
+        +----------+----------+
+                   |
+                Service
+                   |
+                Ingress
+```
+
+Security around it:
+
+```text
+Authentication
+      ↓
+     RBAC
+      ↓
+Admission / Pod Security
+      ↓
+NetworkPolicy
+      ↓
+Secure Containers
+      ↓
+Secrets
+      ↓
+TLS / Encryption
+      ↓
+Monitoring + Audit
+```
+
+---
+
+# ⭐ Senior Interview Answer
+
+If interviewer asks:
+
+### "How do you ensure HA and security in Kubernetes?"
+
+Say:
+
+> **For HA, I use multiple control-plane nodes, highly available etcd with quorum, multiple worker nodes, replicas spread across nodes or availability zones, PodDisruptionBudgets, health probes, and proper resource management. For security, I follow least privilege using RBAC and dedicated service accounts, run containers as non-root, drop unnecessary Linux capabilities, disable privilege escalation, use NetworkPolicies, secure Secrets, TLS and encryption, image scanning, admission controls, and audit logging. I also maintain backups and test disaster recovery procedures.**
+
+### Easy memory:
+
+```text
+HA = Don't let one failure take everything down.
+
+Security = Don't let one compromised component access everything.
+```
+
+**Most important interview topics:** `etcd quorum → API server HA → Pod spreading → PDB → RBAC → ServiceAccount → securityContext → NetworkPolicy → Secrets → Pod Security Admission → image security → TLS/encryption`.
+
+---
+
+# 20. Quick Reference (Extra)
+
+## 20.1 etcd quorum table
+
+Quorum = `floor(n / 2) + 1`
+
+| etcd members | Quorum needed | Failures tolerated |
+| --- | --- | --- |
+| 1 | 1 | 0 |
+| 2 | 2 | 0 |
+| 3 | 2 | **1** |
+| 4 | 3 | 1 |
+| 5 | 3 | **2** |
+
+> An even number adds no extra tolerance (4 members tolerate the same 1 failure as 3), which is why odd numbers are used.
+
+## 20.2 Control plane HA: leader election
+
+* **kube-apiserver**: all instances are active behind the load balancer.
+* **kube-scheduler** and **kube-controller-manager**: multiple instances run, but only **one leader is active** at a time. If it fails, another instance takes over through **leader election**.
+
+```bash
+kubectl get lease -n kube-system
+```
+
+## 20.3 Spread Pods across zones (`topologySpreadConstraints`)
+
+```yaml
+spec:
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app: backend
+```
+
+Use `kubernetes.io/hostname` as the `topologyKey` to spread across **nodes** instead of zones.
+
+## 20.4 RBAC example
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: pod-reader
+  namespace: production
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: read-pods
+  namespace: production
+subjects:
+  - kind: ServiceAccount
+    name: backend-sa
+    namespace: production
+roleRef:
+  kind: Role
+  name: pod-reader
+  apiGroup: rbac.authorization.k8s.io
+```
+
+```text
+ServiceAccount (backend-sa) → RoleBinding → Role (pod-reader) → get/list/watch Pods
+```
+
+## 20.5 Default-deny NetworkPolicy
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: production
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+```
+
+Then allow only what is needed:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-frontend-to-backend
+  namespace: production
+spec:
+  podSelector:
+    matchLabels:
+      app: backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: frontend
+      ports:
+        - protocol: TCP
+          port: 8080
+```
+
+> A NetworkPolicy only works if the **CNI enforces it** (Calico and Cilium do; plain Flannel does not).
+
+## 20.6 Pod Security Admission (namespace labels)
+
+```bash
+kubectl label namespace production \
+  pod-security.kubernetes.io/enforce=restricted \
+  pod-security.kubernetes.io/warn=restricted
+```
+
+| Level | Meaning |
+| --- | --- |
+| `privileged` | Unrestricted |
+| `baseline` | Blocks known privilege escalations |
+| `restricted` | Strongest hardening (non-root, drop capabilities, seccomp, etc.) |
+
+| Mode | Effect |
+| --- | --- |
+| `enforce` | Rejects violating Pods |
+| `warn` | Allows, but shows a warning |
+| `audit` | Allows, but records it in the audit log |
+
+## 20.7 Useful commands
+
+### HA checks
+
+```bash
+kubectl get nodes -o wide
+kubectl get pods -A -o wide
+kubectl get pdb -A
+kubectl describe pdb backend-pdb -n production
+kubectl get pods -l app=backend -o wide        # check Pods are on different nodes
+
+# etcd health (self-managed)
+ETCDCTL_API=3 etcdctl endpoint health --cluster \
+  --cacert=/etc/kubernetes/pki/etcd/ca.crt \
+  --cert=/etc/kubernetes/pki/etcd/server.crt \
+  --key=/etc/kubernetes/pki/etcd/server.key
+```
+
+### Security checks
+
+```bash
+kubectl auth can-i list pods -n production
+kubectl auth can-i list pods -n production \
+  --as=system:serviceaccount:production:backend-sa
+kubectl get role,rolebinding -n production
+kubectl get clusterrolebinding | grep cluster-admin
+kubectl get networkpolicy -A
+kubectl get sa -n production
+kubectl get secret -n production
+```
+
+## 20.8 Managed clusters (Amazon EKS)
+
+| Area | What AWS manages | What you still own |
+| --- | --- | --- |
+| Control plane HA | API servers and etcd run across multiple AZs | Worker nodes, spreading Pods across AZs, PDBs |
+| Authentication | IAM integration and OIDC | Access mapping and RBAC |
+| Secrets encryption | Envelope encryption with KMS (optional) | Enabling it, secret hygiene |
+| Audit logs | Control plane logging (optional) | Enabling and reviewing the logs |
+| Pod-to-AWS access | IAM roles for service accounts / Pod Identity | Least-privilege IAM policies |
+
+> Even on managed Kubernetes, **workload HA and security remain your responsibility** (replicas, PDBs, NetworkPolicy, securityContext, image scanning).
+
