@@ -3489,20 +3489,259 @@ kubectl exec -it frontend-1 -- cat /etc/resolv.conf
 
 ## S07 — INGRESS
 
-**WHAT:** Ingress manages external HTTP/HTTPS access via host/path routing using ONE cloud LB.
+# 🚪 Kubernetes Ingress — Complete Interview Notes
 
-**WHY:** 50 services × LoadBalancer = 50 cloud LBs = very expensive. Ingress = 1 LB for the controller, unlimited routing rules behind it.
+> **One-liner:** Ingress defines **HTTP/HTTPS routing rules** (by host and path) into the cluster. An **Ingress Controller** implements those rules and forwards requests to **Services**.
 
-**HOW:** Ingress Controller (NGINX/AWS ALB) watches Ingress objects → configures actual LB. Traffic: Internet → ALB → Controller → ClusterIP Service → Pod.
+---
 
-### Key Points
+## 📑 Contents
 
-- **Ingress Object:** Just routing rules in YAML. By itself does nothing.
-- **Ingress Controller:** The actual implementation (NGINX Pod or AWS ALB Controller).
-- **pathType: Prefix:** `/api` matches `/api`, `/api/payments`, `/api/any/subpath`
-- **pathType: Exact:** `/api` matches ONLY `/api`
+1. [What / Why / How](#1-what--why--how)
+2. [Ingress Has Two Parts](#2-ingress-has-two-parts)
+3. [Request Flow (NGINX vs AWS ALB)](#3-request-flow-nginx-vs-aws-alb)
+4. [Basic Ingress YAML](#4-basic-ingress-yaml)
+5. [Host-based & Path-based Routing](#5-host-based--path-based-routing)
+6. [Path Types](#6-path-types)
+7. [AWS ALB Ingress (Production YAML)](#7-aws-alb-ingress-production-yaml)
+8. [TLS / HTTPS](#8-tls--https)
+9. [Ingress vs Service vs LoadBalancer](#9-ingress-vs-service-vs-loadbalancer)
+10. [Full Architecture](#10-full-architecture)
+11. [Ingress vs Gateway API](#11-ingress-vs-gateway-api)
+12. [Command Cheat Sheet](#12-command-cheat-sheet)
+13. [Troubleshooting](#13-troubleshooting)
+14. [Interview Questions](#14-interview-questions)
+15. [Memory Flow & Final Answer](#15-memory-flow--final-answer)
 
-### AWS ALB Ingress YAML
+---
+
+# 1. What / Why / How
+
+| | |
+|---|---|
+| **WHAT** | Ingress manages **external HTTP/HTTPS access** to Services using **host/path routing**, through **one** load balancer. |
+| **WHY** | 50 Services × `type: LoadBalancer` = 50 cloud load balancers, which is very expensive. With Ingress there is **1 load balancer** and unlimited routing rules behind it. |
+| **HOW** | An **Ingress Controller** (NGINX, AWS Load Balancer Controller, etc.) watches Ingress objects and configures the actual load balancer or proxy. |
+
+```text
+Internet
+   |
+   ▼
+Ingress
+   |
+   +---- /api     ---> backend-service
+   |
+   +---- /web     ---> frontend-service
+   |
+   +---- /payment ---> payment-service
+```
+
+### Without Ingress vs with Ingress
+
+```text
+WITHOUT: one cloud LB per Service          WITH: one entry point for all
+
+frontend → LoadBalancer → $$                        Internet
+backend  → LoadBalancer → $$                           |
+payment  → LoadBalancer → $$                    One Load Balancer
+                                                       |
+                                                    Ingress
+                                                 /     |     \
+                                          frontend  backend  payment
+                                          Service   Service  Service
+```
+
+---
+
+# 2. Ingress Has Two Parts
+
+> ⭐ **Very important for interviews.**
+
+| Part | What it is | Job |
+| --- | --- | --- |
+| **Ingress resource** | A Kubernetes API object (YAML) | Defines the **routing rules** |
+| **Ingress Controller** | A running component (Pods, or a controller managing a cloud LB) | **Implements** those rules and handles the traffic |
+
+**Ingress controllers:** NGINX, HAProxy, Traefik, Kong, AWS Load Balancer Controller (ALB), and other cloud-provider controllers.
+
+```text
+Ingress resource     = routing rules (YAML). By itself it does NOTHING.
+Ingress Controller   = the component that makes those rules work.
+```
+
+> Creating an Ingress object alone does **not** create a proxy or load balancer. A controller must be installed and configured.
+
+### IngressClass
+
+`ingressClassName` tells Kubernetes **which controller** should handle an Ingress:
+
+```yaml
+spec:
+  ingressClassName: alb        # or nginx, traefik, ...
+```
+
+```bash
+kubectl get ingressclass
+```
+
+---
+
+# 3. Request Flow (NGINX vs AWS ALB)
+
+User opens `https://api.cmg.gov.uk/api/payments`.
+
+## 3.1 Common steps
+
+1. User sends an HTTPS request.
+2. **DNS** resolves the hostname to the load balancer.
+3. The request reaches the external load balancer.
+4. Host and path rules are matched (`/api/payments`).
+5. The request goes to `payment-service` and then to a backend **Pod**.
+
+## 3.2 NGINX-style controller (controller Pods are in the traffic path)
+
+```text
+User
+  ▼
+DNS
+  ▼
+Cloud Load Balancer
+  ▼
+Ingress Controller Pod (NGINX)   ← reads the Ingress rules, proxies the request
+  ▼
+ClusterIP Service (payment-service)
+  ▼
+Backend Pod
+```
+
+## 3.3 AWS Load Balancer Controller (ALB)
+
+```text
+User
+  ▼
+DNS
+  ▼
+AWS ALB     ← rules configured by the controller
+  ▼
+Pod IP directly   (target-type: ip)
+```
+
+The **AWS Load Balancer Controller** Pod runs in the cluster, but it only **creates and updates the ALB**. It is the **control plane** and does not carry the traffic. The Service is used to **discover which Pods** are the backends.
+
+| | NGINX Ingress Controller | AWS LB Controller (ALB) |
+| --- | --- | --- |
+| Where the routing happens | Inside the controller **Pods** | In the AWS **ALB** (outside the cluster) |
+| Controller in traffic path? | ✅ Yes | ❌ No (control plane only) |
+| Traffic to Pods | Via Service/endpoints from the NGINX Pod | ALB → Pod IP (`ip` mode) or → NodePort (`instance` mode) |
+| Cloud LB in front? | Yes (NLB/CLB for the controller Service) | The ALB **is** the LB |
+
+---
+
+# 4. Basic Ingress YAML
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: app-ingress
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: example.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 80
+```
+
+Meaning:
+
+```text
+example.com/api
+       |
+       ▼
+backend-service:80
+```
+
+> Ingress routes to **Services**, not directly to Pods.
+
+---
+
+# 5. Host-based & Path-based Routing
+
+## 5.1 Host-based: different domains → different Services
+
+```text
+app.example.com     → frontend-service
+api.example.com     → backend-service
+payment.example.com → payment-service
+```
+
+```yaml
+spec:
+  rules:
+    - host: app.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: frontend-service, port: { number: 80 } }
+    - host: api.example.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: backend-service, port: { number: 80 } }
+```
+
+## 5.2 Path-based: same domain, different paths
+
+```text
+example.com
+   ├── /web     → frontend-service
+   ├── /api     → backend-service
+   └── /payment → payment-service
+```
+
+```yaml
+rules:
+  - host: example.com
+    http:
+      paths:
+        - path: /api
+          pathType: Prefix
+          backend:
+            service: { name: backend-service, port: { number: 80 } }
+        - path: /payment
+          pathType: Prefix
+          backend:
+            service: { name: payment-service, port: { number: 80 } }
+```
+
+---
+
+# 6. Path Types
+
+| pathType | Behavior | Example: path `/api` |
+| --- | --- | --- |
+| **`Prefix`** | Matches by the **beginning** of the URL, split on `/` | Matches `/api`, `/api/payments`, `/api/any/subpath` |
+| **`Exact`** | Matches **only** that exact path | Matches `/api` only. **Not** `/api/users` |
+| **`ImplementationSpecific`** | Depends on the Ingress Controller | Varies |
+
+> ⭐ Know `Prefix` and `Exact` very well.
+> `Prefix` matches whole path segments, so `/api` matches `/api/users` but **not** `/apiv2`.
+> If several paths match, the **longest** matching path wins.
+
+---
+
+# 7. AWS ALB Ingress (Production YAML)
 
 ```yaml
 apiVersion: networking.k8s.io/v1
@@ -3511,60 +3750,435 @@ metadata:
   name: cmg-ingress
   namespace: cmg-payments
   annotations:
-    kubernetes.io/ingress.class: alb
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
-    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-west-2:123:cert/abc
-    alb.ingress.kubernetes.io/group.name: cmg-shared-alb  # share 1 ALB
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/certificate-arn: arn:aws:acm:eu-west-2:<account-id>:certificate/<cert-id>
     alb.ingress.kubernetes.io/ssl-redirect: "443"
-    alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:...  # WAF integration
+    alb.ingress.kubernetes.io/group.name: cmg-shared-alb     # share 1 ALB
+    alb.ingress.kubernetes.io/wafv2-acl-arn: arn:aws:wafv2:eu-west-2:<account-id>:regional/webacl/<name>/<id>
+    alb.ingress.kubernetes.io/healthcheck-path: /health
 spec:
   ingressClassName: alb
   rules:
-  - host: api.cmg.gov.uk
-    http:
-      paths:
-      - path: /api/payments
-        pathType: Prefix
-        backend:
-          service: {name: payment-service, port: {number: 80}}
-      - path: /api/notifications
-        pathType: Prefix
-        backend:
-          service: {name: notification-service, port: {number: 80}}
-  - host: admin.cmg.gov.uk
-    http:
-      paths:
-      - path: /
-        pathType: Prefix
-        backend:
-          service: {name: admin-service, port: {number: 80}}
+    - host: api.cmg.gov.uk
+      http:
+        paths:
+          - path: /api/payments
+            pathType: Prefix
+            backend:
+              service: { name: payment-service, port: { number: 80 } }
+          - path: /api/notifications
+            pathType: Prefix
+            backend:
+              service: { name: notification-service, port: { number: 80 } }
+    - host: admin.cmg.gov.uk
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service: { name: admin-service, port: { number: 80 } }
 ```
 
-### TLS with cert-manager
+> The old annotation `kubernetes.io/ingress.class: alb` is **deprecated**. Use `spec.ingressClassName: alb`.
+
+## 7.1 ALB annotations explained
+
+| Annotation | Purpose |
+| --- | --- |
+| `scheme: internet-facing` | Public ALB. Use `internal` for a private one |
+| `target-type: ip` | ALB sends traffic **directly to Pod IPs** (works with AWS VPC CNI). `instance` sends to NodePort |
+| `listen-ports` | Which listeners (80/443) the ALB opens |
+| `certificate-arn` | **ACM** certificate used for HTTPS on the ALB |
+| `ssl-redirect: "443"` | Redirect HTTP → HTTPS. Needs both 80 and 443 in `listen-ports` |
+| `group.name` | **IngressGroup**: many Ingresses share **one ALB** (saves cost) |
+| `wafv2-acl-arn` | Attach an AWS **WAF** web ACL |
+| `healthcheck-path` | Path the ALB uses to health-check targets |
+
+## 7.2 ALB requirements to remember
+
+* **AWS Load Balancer Controller** installed in the cluster (usually via Helm), with an **IAM role** (IRSA) that allows it to manage ALBs.
+* Subnets must be **tagged**: `kubernetes.io/role/elb` (public) or `kubernetes.io/role/internal-elb` (private).
+* Services must be `ClusterIP` (with `target-type: ip`) or `NodePort`/`LoadBalancer` (with `instance`).
+
+---
+
+# 8. TLS / HTTPS
+
+## 8.1 TLS termination
+
+```text
+Client
+  | HTTPS
+  ▼
+Ingress Controller / ALB    ← TLS terminates here
+  | HTTP (usually)
+  ▼
+Service → Pod
+```
+
+## 8.2 Certificate stored in a Kubernetes Secret (NGINX, Traefik, etc.)
+
+```yaml
+spec:
+  tls:
+    - hosts:
+        - api.cmg.gov.uk
+      secretName: cmg-tls-cert
+```
+
+```text
+Secret (type: kubernetes.io/tls)
+ ├── tls.crt
+ └── tls.key
+```
+
+## 8.3 Automatic certificates with cert-manager
+
+cert-manager requests and renews certificates and saves them in a Secret.
 
 ```yaml
 # ClusterIssuer
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
-metadata: {name: letsencrypt-prod}
+metadata:
+  name: letsencrypt-prod
 spec:
   acme:
     server: https://acme-v02.api.letsencrypt.org/directory
     email: devops@cmg.gov.uk
-    privateKeySecretRef: {name: le-account-key}
+    privateKeySecretRef:
+      name: le-account-key
     solvers:
-    - http01: {ingress: {class: alb}}
+      - http01:
+          ingress:
+            ingressClassName: nginx      # must match the controller that serves the challenge
+```
 
-# Add to Ingress:
-# annotations:
-#   cert-manager.io/cluster-issuer: letsencrypt-prod
-# spec.tls:
-# - hosts: [api.cmg.gov.uk]
-#   secretName: cmg-tls-cert
+Then add to the Ingress:
+
+```yaml
+metadata:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts: [api.cmg.gov.uk]
+      secretName: cmg-tls-cert           # cert-manager creates this Secret
+```
+
+```text
+Ingress + annotation
+        ▼
+cert-manager → requests cert (Let's Encrypt)
+        ▼
+Certificate stored in Secret (cmg-tls-cert)
+        ▼
+Ingress Controller uses the Secret for HTTPS
+```
+
+> ⚠️ **With an AWS ALB, use ACM instead.** The ALB terminates TLS with an **ACM certificate** (`certificate-arn`). It cannot read a Kubernetes Secret, so cert-manager Secrets are not used by the ALB. cert-manager fits controllers that terminate TLS inside the cluster (NGINX, Traefik).
+
+| | ALB + ACM | NGINX + cert-manager |
+| --- | --- | --- |
+| Certificate stored in | AWS ACM | Kubernetes Secret |
+| TLS terminates at | ALB | Controller Pod |
+| Renewal | ACM (automatic) | cert-manager (automatic) |
+| Ingress config | `certificate-arn` annotation | `spec.tls` + cluster-issuer annotation |
+
+---
+
+# 9. Ingress vs Service vs LoadBalancer
+
+## 9.1 Ingress vs Service
+
+| Ingress | Service |
+| --- | --- |
+| HTTP/HTTPS routing (Layer 7) | Stable network endpoint for Pods (Layer 4) |
+| Routes by **host and path** | Routes to Pods by **selector** |
+| Usually the external HTTP/HTTPS entry point | Can be internal or external |
+| Can do TLS termination | Doesn't do HTTP path routing |
+| Works **with** Services | Directly represents access to backend Pods |
+
+```text
+Ingress → Service → Pods
+```
+
+> Ingress does not normally send traffic directly to Pods. It routes to **Services**. (With ALB `ip` mode the ALB sends traffic straight to Pod IPs, but the Service is still what the Ingress rule points to.)
+
+## 9.2 Ingress vs `type: LoadBalancer` Service
+
+```text
+LoadBalancer Service:               Ingress:
+
+Internet                            Internet
+   |                                   |
+LoadBalancer Service                Load Balancer
+   |                                   |
+Pods                                Ingress Controller
+                                       ├── Service A
+(one LB per exposed Service)           ├── Service B
+                                       └── Service C
+```
+
+| | LoadBalancer Service | Ingress |
+| --- | --- | --- |
+| Protocols | Any TCP/UDP | HTTP/HTTPS |
+| Load balancers needed | One per Service | One shared |
+| Host/path routing | ❌ | ✅ |
+| Cost at scale | High | Low |
+
+---
+
+# 10. Full Architecture
+
+```text
+                    Internet
+                       |
+                       ▼
+                      DNS
+                       |
+                       ▼
+                Load Balancer
+                       |
+                       ▼
+              Ingress Controller
+                       |
+             +---------+---------+
+             |         |         |
+             ▼         ▼         ▼
+         Service A  Service B  Service C
+             |         |         |
+             ▼         ▼         ▼
+            Pods      Pods      Pods
+```
+
+### Who does what
+
+```text
+CoreDNS        → Name resolution inside the cluster
+Ingress        → HTTP/HTTPS routing rules
+Ingress Ctrl   → Implements those rules
+Service        → Stable endpoint for Pods
+CNI            → Pod networking
+kube-proxy     → Service networking
 ```
 
 ---
+
+# 11. Ingress vs Gateway API
+
+* Traditional Ingress is designed mainly for **HTTP/HTTPS**.
+* **Gateway API** is the newer, more expressive standard. It covers advanced HTTP routing, TCP/UDP/gRPC routes, and a clearer role split (infrastructure vs app teams).
+* Many controllers also add features through **annotations**, which are not portable between controllers.
+
+| | Ingress | Gateway API |
+| --- | --- | --- |
+| Protocols | HTTP/HTTPS | HTTP, gRPC, TCP, UDP, TLS |
+| Extensibility | Controller-specific annotations | Built into the API (route types, policies) |
+| Roles | Single object | Separate GatewayClass / Gateway / Routes |
+| Status | Stable, feature-frozen | Modern standard, actively developed |
+
+> ⚠️ **Heads-up on NGINX:** The community **ingress-nginx** project (Kubernetes SIG) was **retired in March 2026**. There are no more releases, bug fixes or security patches. Existing installs keep working, but Kubernetes recommends moving to another controller or to **Gateway API**. Other NGINX-based controllers, such as the F5/NGINX Inc. one, are separate projects.
+
+---
+
+# 12. Command Cheat Sheet
+
+### View
+
+```bash
+kubectl get ingress -n cmg-payments
+kubectl get ingress -A
+kubectl describe ingress cmg-ingress -n cmg-payments
+kubectl get ingress cmg-ingress -n cmg-payments -o yaml
+kubectl get ingressclass
+```
+
+### Create
+
+```bash
+kubectl apply -f ingress.yaml
+
+# imperative example (trailing * means Prefix)
+kubectl create ingress app-ingress \
+  --class=nginx \
+  --rule="example.com/api*=backend-service:80"
+```
+
+### Controller checks
+
+```bash
+# AWS Load Balancer Controller
+kubectl get pods -n kube-system | grep aws-load-balancer
+kubectl logs -n kube-system deploy/aws-load-balancer-controller
+
+# NGINX-based controller (namespace depends on install)
+kubectl get pods -n ingress-nginx
+kubectl logs -n ingress-nginx deploy/ingress-nginx-controller
+```
+
+### Get the address (ALB DNS name / LB address)
+
+```bash
+kubectl get ingress cmg-ingress -n cmg-payments \
+  -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'
+```
+
+### Test routing without DNS
+
+```bash
+curl -H "Host: api.cmg.gov.uk" http://<ALB-DNS>/api/payments
+curl -vk https://api.cmg.gov.uk/api/payments
+```
+
+### Backends
+
+```bash
+kubectl get svc,endpointslice -n cmg-payments
+kubectl get pods -n cmg-payments --show-labels
+```
+
+### cert-manager
+
+```bash
+kubectl get clusterissuer
+kubectl get certificate -n cmg-payments
+kubectl describe certificate cmg-tls-cert -n cmg-payments
+kubectl get certificaterequest,order,challenge -n cmg-payments
+```
+
+### Delete
+
+```bash
+kubectl delete ingress cmg-ingress -n cmg-payments
+```
+
+---
+
+# 13. Troubleshooting
+
+## 13.1 Debug flow
+
+```text
+Ingress not working?
+      │
+      ▼
+1. kubectl get ingress        → ADDRESS empty?
+      │                         → controller not installed / wrong ingressClassName
+      ▼
+2. Controller logs            → errors creating ALB? (IAM, subnet tags, annotation typos)
+      │
+      ▼
+3. kubectl describe ingress   → check Events and backend status
+      │
+      ▼
+4. Service + endpoints        → kubectl get endpointslice (empty → selector/readiness problem)
+      │
+      ▼
+5. curl with Host header      → test routing, then check DNS
+```
+
+## 13.2 Symptom → cause
+
+| Symptom | Likely cause |
+| --- | --- |
+| `ADDRESS` column empty | No controller, wrong `ingressClassName`, or the controller failed to create the LB |
+| **404** from the controller | No rule matched: wrong host/path, wrong `pathType`, missing `Host` header |
+| **502 / 503** | Service has **no ready endpoints**, wrong port, or Pods failing readiness |
+| **504** timeout | Backend too slow, security group / NetworkPolicy blocking, wrong target port |
+| ALB targets **unhealthy** | Wrong health check path/port, or Pod SG blocks ALB |
+| ALB not created (AWS) | Controller IAM permissions, untagged subnets, invalid annotations |
+| HTTPS certificate error | Wrong cert, host not in cert, cert-manager challenge failing, or ACM cert in the wrong region |
+| HTTP → HTTPS redirect not working | `listen-ports` doesn't include both 80 and 443 |
+| Rules ignored | Ingress uses a different `ingressClassName` than the installed controller |
+
+---
+
+# 14. Interview Questions
+
+**Q1. What is Ingress?**
+> A Kubernetes API object that defines HTTP/HTTPS routing rules based on host and path, so external traffic can reach multiple Services through one entry point.
+
+**Q2. What are the two parts of Ingress?**
+> The **Ingress resource** (routing rules) and the **Ingress Controller** (implements those rules).
+
+**Q3. Is Ingress a load balancer?**
+> No. Ingress is an API object that defines the rules. The Ingress Controller implements them and typically works with an external load balancer to receive traffic.
+
+**Q4. Does Ingress replace Service?**
+> No. Ingress routes external HTTP/HTTPS traffic **to Services**. Services provide stable endpoints and route to Pods.
+
+**Q5. What happens if no Ingress Controller is installed?**
+> The Ingress object exists, but nothing implements its rules, so traffic isn't handled.
+
+**Q6. Why use Ingress instead of many LoadBalancer Services?**
+> Cost and simplicity. One load balancer with many routing rules replaces one load balancer per Service.
+
+**Q7. `Prefix` vs `Exact`?**
+> `Prefix` matches by path segments, so `/api` matches `/api`, `/api/payments`, `/api/x/y`. `Exact` matches only `/api`.
+
+**Q8. Host-based vs path-based routing?**
+> Host-based routes different domains to different Services. Path-based routes different URL paths on the same domain.
+
+**Q9. How is TLS handled?**
+> TLS terminates at the ingress point. With NGINX-type controllers the cert is in a Kubernetes Secret (often managed by cert-manager). With an AWS ALB the cert is in ACM (`certificate-arn`).
+
+**Q10. In AWS ALB Ingress, is the controller in the traffic path?**
+> No. The AWS Load Balancer Controller only configures the ALB. Traffic goes from the ALB straight to Pod IPs (`target-type: ip`) or NodePorts (`instance`).
+
+**Q11. What is `target-type: ip` vs `instance`?**
+> `ip` sends traffic directly to Pod IPs (needs a VPC-native CNI such as AWS VPC CNI). `instance` sends to node NodePorts, and kube-proxy then forwards to Pods.
+
+**Q12. How do you share one ALB across many Ingresses?**
+> Use the `alb.ingress.kubernetes.io/group.name` annotation (IngressGroup).
+
+**Q13. Can Ingress handle TCP/UDP?**
+> Traditional Ingress is for HTTP/HTTPS. For broader L4/L7 needs use **Gateway API** or controller-specific mechanisms.
+
+**Q14. What is `ingressClassName`?**
+> It selects which Ingress Controller should handle the Ingress. It replaces the older `kubernetes.io/ingress.class` annotation.
+
+**Q15. A user gets 503 through the Ingress. What do you check?**
+> Check whether the backend Service has ready endpoints (`kubectl get endpointslice`), whether the selector matches the Pod labels, whether readiness probes pass, and whether the Service port matches the Ingress backend port.
+
+**Q16. What is the future of Ingress?**
+> Gateway API is the modern standard. The community ingress-nginx controller was retired in March 2026, so new setups should pick a maintained controller or Gateway API.
+
+---
+
+# 15. Memory Flow & Final Answer
+
+```text
+INGRESS = OUTSIDE → INSIDE  HTTP/HTTPS ROUTING
+
+Internet
+   ↓
+DNS
+   ↓
+Load Balancer
+   ↓
+Ingress Controller  (reads Ingress rules)
+   ↓
+Service
+   ↓
+Pod
+```
+
+```text
+Ingress object     → rules only
+Ingress Controller → implements the rules
+Service            → stable endpoint to Pods
+pathType Prefix    → /api matches /api/*
+pathType Exact     → /api matches only /api
+group.name         → many Ingresses, one ALB
+ACM (ALB) vs cert-manager (NGINX) → where TLS certs live
+```
+
+### ⭐ One-line interview answer
+
+> **Ingress provides HTTP/HTTPS routing into a Kubernetes cluster based on host and path rules, while an Ingress Controller, such as NGINX or the AWS Load Balancer Controller, implements those rules and forwards requests to Services. One shared load balancer replaces many per-Service load balancers, and TLS is terminated at the entry point using an ACM certificate on an ALB or a Secret managed by cert-manager.**
 
 ## S08 — NETWORK POLICIES
 
