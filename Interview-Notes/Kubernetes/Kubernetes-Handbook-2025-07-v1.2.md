@@ -3086,100 +3086,404 @@ Headless     → Pod IPs directly (StatefulSet)
 
 ## S06 — NETWORKING (CNI · kube-proxy · CoreDNS)
 
-**WHAT:** K8s networking implements a flat network model where all Pods communicate without NAT.
+# 🔌 Kubernetes Networking — Simple Notes
 
-**WHY:** Without a network standard, Pod-to-Pod communication would require complex manual configuration across hundreds of nodes.
+> **In one line:** **CNI** connects Pods. **kube-proxy** sends Service traffic to Pods. **CoreDNS** turns Service names into IPs.
 
-**HOW:** CNI plugins implement the network model. kube-proxy implements Service routing. CoreDNS provides DNS.
+---
 
-### 3 Kubernetes Networking Rules
+## 1. The Example Used in These Notes
 
-1. Every Pod gets unique IP — no two Pods share an IP
-2. All Pods reach all other Pods WITHOUT NAT
-3. Pod IP seen from inside = IP seen from outside (no masquerading inside cluster)
+Every example below uses this same setup:
 
-### Network Layers
+```text
+frontend Pods (Deployment)             backend Pods (Deployment)
+  frontend-1  10.244.1.10                backend-1  10.244.2.15
+                                         backend-2  10.244.2.16
+                                         backend-3  10.244.1.20
 
-```
-Node Network:    EC2 IPs from VPC (10.0.1.10, 10.0.2.10...)
-Pod Network:     Pod CIDR (10.244.0.0/16) — managed by CNI
-Service Network: ClusterIP CIDR (10.96.0.0/12) — virtual, managed by kube-proxy
-```
-
-### CNI Plugin Comparison
-
-| Plugin | Networking Type | NetworkPolicy | EKS Support | Best For |
-|---|---|---|---|---|
-| AWS VPC CNI | Native VPC IPs (no overlay) | With Calico add-on | Default | EKS production |
-| Calico | BGP routing + overlay | Full L3/L4 | Add-on | NetworkPolicy enforcement |
-| Cilium | eBPF (no iptables) | Full L3/L4/L7 | Add-on | High perf + L7 policy |
-| Flannel | VXLAN overlay | NOT supported | Manual | Simple/dev only |
-| Weave Net | VXLAN + encryption | Supported | Manual | Encrypted comms |
-
-### Packet Flows
-
-```
-Same-node Pod-to-Pod:
-  Pod-A (eth0) → veth pair → cni0 bridge → veth pair → Pod-B (eth0)
-  Pure kernel bridge. Sub-millisecond latency.
-
-Cross-node (AWS VPC CNI — no overlay):
-  Pod-A (real VPC IP 10.0.1.50) → VPC routing table → Pod-B (10.0.2.30)
-  No encapsulation. Native VPC speed.
-
-Cross-node (VXLAN — Flannel):
-  Pod-A → flannel.1 VTEP → UDP:8472 encapsulation → Node-2 → decap → Pod-B
-  ~50 byte overhead per packet.
-
-Pod-to-Service:
-  Pod → ClusterIP:80 → iptables DNAT on node → Pod IP:8080
-  ClusterIP has NO real listener — pure kernel NAT.
-
-Pod-to-Internet:
-  Pod → Node eth0 → SNAT (masquerade to Node IP) → Internet
+Service: backend-service
+  ClusterIP: 10.96.20.10
+  port: 8080  →  targetPort: 8080
+  selector: app=backend
 ```
 
-### kube-proxy Modes
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: production
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+```
 
-| Mode | Performance | Algorithm | Use Case |
-|---|---|---|---|
-| iptables (default) | O(n) linear scan | Random only | Small-medium clusters (<1000 Services) |
-| IPVS | O(1) hash tables | 8 algorithms (rr/lc/sh/dh...) | Large clusters (>1000 Services) |
-| userspace (DEPRECATED) | Slowest | — | Never use |
+The frontend Pod calls `http://backend-service:8080`. Three components make this work:
 
-### CoreDNS
+| Component | What it does in this example |
+| --- | --- |
+| **CNI** | Gives `frontend-1` and the backend Pods their IPs and connects them |
+| **kube-proxy** | Turns `10.96.20.10:8080` into one real backend Pod IP |
+| **CoreDNS** | Turns the name `backend-service` into `10.96.20.10` |
 
-- Runs as 2+ Pod Deployment in kube-system namespace
-- Every Pod `/etc/resolv.conf` nameserver → CoreDNS ClusterIP
-- Auto-registers every Service as DNS A record
-- **ndots:5 problem:** 5 extra lookups for external names — fix with `ndots:2`
+```text
+CNI        → How do Pods talk?
+kube-proxy → How does Service traffic reach a Pod?
+CoreDNS    → What is the IP of this name?
+```
+
+---
+
+## 2. Three Golden Rules
+
+1. Every Pod has its **own IP** (`frontend-1` = `10.244.1.10`, `backend-1` = `10.244.2.15`).
+2. Every Pod can reach every other Pod **without NAT**.
+3. A Pod's IP looks the **same** from inside and outside.
+
+```text
+frontend-1 (10.244.1.10)  ──►  backend-1 (10.244.2.15)
+backend-1 sees the source as 10.244.1.10, not a node IP
+```
+
+---
+
+## 3. Three Networks
+
+```text
+Node network     → IPs of the nodes    (example: 10.0.1.10)
+Pod network      → IPs of the Pods     (example: 10.244.0.0/16), managed by the CNI
+Service network  → IPs of the Services (example: 10.96.0.0/12), virtual, managed by kube-proxy
+```
+
+> `10.96.20.10` (the ClusterIP of `backend-service`) is **not attached to any interface**. It exists only as kube-proxy rules on each node.
+
+---
+
+## 4. CNI (Container Network Interface)
+
+### What is it?
+
+* A standard way to set up networking for Pods.
+* Kubernetes does **not** build the Pod network itself. A **CNI plugin** does.
+
+### What happens when `backend-1` starts?
+
+```text
+1. Pod backend-1 is scheduled to a node
+2. kubelet asks the CNI plugin to set up the Pod network
+3. The CNI plugin:
+     - creates eth0 inside the Pod
+     - gives it IP 10.244.2.15
+     - connects it to the cluster network
+     - sets up routes
+4. backend-1 can now talk to frontend-1 at 10.244.1.10
+```
+
+### Popular CNI plugins
+
+| Plugin | Simple description | NetworkPolicy? |
+| --- | --- | --- |
+| **AWS VPC CNI** | Pods get real VPC IPs. No overlay. Default on EKS. Runs as `aws-node` | Newer versions, or with Calico |
+| **Calico** | Routing based. Good for policies. Runs as `calico-node` | ✅ Yes |
+| **Cilium** | Uses eBPF. Fast. Can do L7 policy. | ✅ Yes |
+| **Flannel** | Simple VXLAN overlay. Good for learning. | ❌ No |
+| **Weave Net** | Overlay with encryption. No longer maintained. | ✅ Yes |
+
+> ⚠️ With Flannel, a `NetworkPolicy` object is accepted by the API but **not enforced**.
+
+---
+
+## 5. How Packets Travel
+
+**Same node** (`frontend-1` and `backend-3` are both on Node 1)
+
+```text
+frontend-1 → node's bridge/routes → backend-3
+```
+
+**Different nodes, AWS VPC CNI** (`frontend-1` on Node 1, `backend-1` on Node 2)
+
+```text
+frontend-1 (10.0.1.50) → VPC routing → backend-1 (10.0.2.30)
+No wrapping. Full VPC speed.
+```
+
+**Different nodes, VXLAN (Flannel)**
+
+```text
+frontend-1 → wrap in UDP (port 8472) → Node 2 → unwrap → backend-1
+Extra cost: about 50 bytes per packet
+```
+
+**Pod to Service** (`frontend-1` calls `backend-service`)
+
+```text
+frontend-1 → 10.96.20.10:8080 → node rewrites it (DNAT) → 10.244.2.15:8080
+```
+
+**Pod to Internet** (`frontend-1` calls an external API)
+
+```text
+frontend-1 → Node → Pod IP replaced by Node IP (SNAT) → Internet
+```
+
+---
+
+## 6. VXLAN Simple View
+
+VXLAN puts the Pod packet **inside a node-to-node packet**:
+
+```text
+[ Outer: Node 1 (10.0.1.10) → Node 2 (10.0.2.10), UDP port 8472 ]
+   [ Inner: frontend-1 (10.244.1.10) → backend-1 (10.244.2.15) ]
+```
+
+* Costs about **50 bytes** per packet.
+* Nodes must be able to reach each other on UDP **8472**.
+
+---
+
+## 7. kube-proxy
+
+### What is it?
+
+* Runs on **every node** as a DaemonSet Pod in `kube-system`.
+* Watches Services and EndpointSlices.
+* Writes rules on the node so Service traffic goes to a real Pod.
+
+### In our example
+
+```text
+EndpointSlice for backend-service:
+   10.244.2.15:8080
+   10.244.2.16:8080
+   10.244.1.20:8080
+
+Request to 10.96.20.10:8080
+            ↓
+      kube-proxy rules
+            ↓
+ one of the three IPs above
+```
+
+If `backend-2` is deleted, the EndpointSlice updates, kube-proxy updates the rules, and traffic stops going to `10.244.2.16`.
+
+### Modes
+
+| Mode | In simple words | When to use |
+| --- | --- | --- |
+| **iptables** | Checks rules one by one. Picks a Pod at random. | Small/medium clusters |
+| **IPVS** | Fast lookup. Many load-balancing methods. | Big clusters |
+| **nftables** | Newer rule system | Newer Kubernetes |
+| **userspace** | Old and slow. Do not use. | Never |
+
+> ⚠️ Don't say "kube-proxy always uses iptables". It depends on version and setup.
+
+### Does kube-proxy give Pods their IPs?
+
+**No.** The **CNI** does that.
+
+---
+
+## 8. CoreDNS
+
+### What is it?
+
+* The cluster DNS server.
+* Runs as a Deployment (2+ Pods) in `kube-system`, behind a Service named `kube-dns`.
+* Automatically creates a DNS record for every Service.
+* Every Pod is configured to send DNS queries to CoreDNS.
+
+### Why do we need it?
+
+```text
+Without DNS:  frontend uses 10.96.20.10        (breaks if the Service is recreated with a new IP)
+With DNS:     frontend uses backend-service    (name stays the same)
+```
+
+### Service name formats (from a Pod in the `production` namespace)
+
+```text
+backend-service                                   → same namespace
+backend-service.production                        → with namespace
+backend-service.production.svc.cluster.local      → full name (always works)
+```
+
+### What a Pod's DNS config looks like
 
 ```bash
+kubectl exec -it frontend-1 -- cat /etc/resolv.conf
+```
+
+```text
+nameserver 10.96.0.10          ← ClusterIP of the kube-dns Service (CoreDNS)
+search production.svc.cluster.local svc.cluster.local cluster.local
+options ndots:5
+```
+
+### The `ndots:5` problem
+
+`frontend-1` looks up `api.example.com` (2 dots, fewer than 5). It first tries:
+
+```text
+api.example.com.production.svc.cluster.local   ✗
+api.example.com.svc.cluster.local              ✗
+api.example.com.cluster.local                  ✗
+api.example.com                                ✓
+```
+
+That is several useless queries for every external name.
+
+**Fix in the Pod spec:**
+
+```yaml
+spec:
+  dnsConfig:
+    options:
+      - name: ndots
+        value: "2"
+```
+
+* Or use a name with a dot at the end: `api.example.com.`
+
+---
+
+## 9. All Three Together
+
+`frontend-1` calls `http://backend-service:8080`:
+
+```text
+1. frontend-1 asks CoreDNS: "IP of backend-service?"
+        ↓
+2. CoreDNS answers: 10.96.20.10 (the ClusterIP)
+        ↓
+3. frontend-1 sends traffic to 10.96.20.10:8080
+        ↓
+4. kube-proxy rules on the node change it to 10.244.2.15:8080
+        ↓
+5. The CNI network delivers the packet to backend-1
+```
+
+| Step | Who does it |
+| --- | --- |
+| Find the IP | **CoreDNS** |
+| Pick a Pod | **kube-proxy** |
+| Deliver the packet | **CNI** |
+
+---
+
+## 10. Quick Difference Table
+
+| Component | Main job | Runs as |
+| --- | --- | --- |
+| **CNI** | Pod networking | DaemonSet Pods such as `aws-node`, `calico-node`, `cilium` |
+| **kube-proxy** | Service networking | DaemonSet in `kube-system` |
+| **CoreDNS** | Name → IP | Deployment in `kube-system` |
+| **Service** | Stable address for Pods | API object |
+| **EndpointSlice** | List of Pod IPs behind a Service | API object |
+
+---
+
+## 11. Useful Commands
+
+```bash
+# CNI Pods
+kubectl get pods -n kube-system          # look for calico-node, cilium, aws-node, flannel
+
+# kube-proxy
+kubectl get pods -n kube-system -l k8s-app=kube-proxy
+kubectl logs -n kube-system -l k8s-app=kube-proxy
+
+# CoreDNS
 kubectl get pods -n kube-system -l k8s-app=kube-dns
 kubectl logs -n kube-system -l k8s-app=kube-dns
-kubectl rollout restart deploy/coredns -n kube-system  # restart if broken
+kubectl rollout restart deploy/coredns -n kube-system
 
-# Test DNS from inside Pod
-kubectl exec -it debug-pod -- nslookup payment-service.cmg-payments.svc.cluster.local
-kubectl exec -it debug-pod -- cat /etc/resolv.conf
+# Services and endpoints
+kubectl get svc -n production
+kubectl get endpointslice -n production
+
+# Test DNS from a Pod
+kubectl exec -it frontend-1 -- nslookup backend-service
+kubectl exec -it frontend-1 -- nslookup kubernetes.default.svc.cluster.local
+kubectl exec -it frontend-1 -- cat /etc/resolv.conf
 ```
 
-### VXLAN Internals
+---
 
+## 12. Simple Troubleshooting
+
+`frontend-1` can't reach `backend-service`:
+
+```text
+1. Does the name resolve?
+      kubectl exec -it frontend-1 -- nslookup backend-service
+      (No → check CoreDNS Pods and logs)
+   ↓
+2. Does the Service have endpoints?
+      kubectl get endpointslice -n production
+      (Empty → selector app=backend doesn't match Pod labels, or Pods aren't Ready)
+   ↓
+3. Does the Pod IP work directly?
+      kubectl exec -it frontend-1 -- curl 10.244.2.15:8080
+      (No → CNI problem)
+   ↓
+4. Pod IP works, Service IP doesn't?
+      → kube-proxy problem or a NetworkPolicy
 ```
-VXLAN Packet Structure:
-┌────────────────────────────────────────────────────────┐
-│ Outer Ethernet Header (node-1 MAC → node-2 MAC)        │
-│ Outer IP Header (10.0.1.10 → 10.0.2.10) ← node IPs   │
-│ Outer UDP Header (src: random, dst: 8472)               │
-│ VXLAN Header (VNI: 1)                                   │
-│ ┌──────────────────────────────────────────────────┐   │
-│ │ Inner IP (10.244.1.5 → 10.244.2.5) ← Pod IPs   │   │
-│ │ TCP/UDP Payload (actual application data)         │   │
-│ └──────────────────────────────────────────────────┘   │
-└────────────────────────────────────────────────────────┘
-Overhead: ~50 bytes per packet
-```
+
+| Problem | Likely cause |
+| --- | --- |
+| `nslookup backend-service` fails | CoreDNS down |
+| Slow external lookups | `ndots:5` |
+| `frontend-1` can't reach `backend-1` by Pod IP | CNI, node firewall or NetworkPolicy |
+| Pod stuck in `ContainerCreating` | CNI problem (for example no free IPs) |
+| Service IP fails, Pod IP works | kube-proxy problem |
+| NetworkPolicy has no effect | The CNI doesn't enforce it (for example Flannel) |
+
+---
+
+## 13. Easy Interview Answers
+
+**What is CNI?**
+> A standard for Pod networking. The CNI plugin gives Pods IPs and connects them.
+
+**What does kube-proxy do?**
+> It writes node rules so Service traffic reaches the backend Pods.
+
+**What does CoreDNS do?**
+> It turns Service names into IPs.
+
+**Does kube-proxy give Pod IPs?**
+> No. The CNI does.
+
+**How does a Pod call a Service?**
+> DNS lookup → ClusterIP → kube-proxy rules → Pod IP.
+
+**What if CoreDNS is down?**
+> New name lookups fail. Existing connections and direct IP traffic can still work.
+
+**What if kube-proxy is unhealthy?**
+> Service routing on that node can break or go stale. Pod-to-Pod traffic still works.
+
+**iptables vs IPVS?**
+> iptables checks rules one by one (random pick). IPVS is faster and better for big clusters.
+
+**Which CNI does not support NetworkPolicy?**
+> Flannel.
+
+**What is the cost of VXLAN?**
+> About 50 bytes extra per packet.
+
+---
+
+## ⭐ One-Line Answer
+
+> **CNI gives Pods their IPs and connects them, kube-proxy sends Service traffic to healthy Pods, and CoreDNS turns Service names into IPs. When `frontend` calls `backend-service`, CoreDNS gives the ClusterIP, kube-proxy picks a backend Pod, and the CNI delivers the packet.**
 
 ---
 
