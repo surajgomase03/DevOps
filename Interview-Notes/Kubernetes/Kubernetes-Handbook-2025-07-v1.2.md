@@ -2416,71 +2416,276 @@ New version running
 
 ## S05 — SERVICES & DNS
 
-**WHAT:** Service provides a stable virtual IP and DNS name for dynamic Pods found via label selector.
+*# 🌐 Kubernetes Services & DNS — Complete Interview Notes
 
-**WHY:** Pod IPs change every restart. Hardcoding Pod IPs breaks on every deployment. Service DNS (stable) → ClusterIP (stable) → Endpoints (dynamic Pod IPs).
+> **One-liner:** A Service gives a dynamic set of Pods a **stable virtual IP and DNS name**. It finds them with **label selectors**, and it can be exposed as `ClusterIP`, `NodePort`, `LoadBalancer`, `ExternalName` or **Headless**.
 
-**HOW:** CoreDNS auto-creates A record: `svc.ns.svc.cluster.local` → ClusterIP. kube-proxy writes iptables DNAT rules: ClusterIP:port → random healthy Pod IP from Endpoints.
+---
 
-> **IMPORTANT:** Service DNS does NOT point directly to a Pod.  
-> Flow: DNS Query → CoreDNS returns ClusterIP → iptables DNAT on node → Pod IP from Endpoints.  
-> The ClusterIP never changes even when ALL Pods are replaced.
+## 📑 Contents
 
-### All 5 Service Types
+1. [What / Why / How](#1-what--why--how)
+2. [The Problem: Pod IPs Change](#2-the-problem-pod-ips-change)
+3. [How a Request Flows (DNS → ClusterIP → Pod)](#3-how-a-request-flows-dns--clusterip--pod)
+4. [Service YAML, Selector & Ports](#4-service-yaml-selector--ports)
+5. [Service Types](#5-service-types)
+6. [Service DNS Formats](#6-service-dns-formats)
+7. [Load Balancing & kube-proxy](#7-load-balancing--kube-proxy)
+8. [EndpointSlices](#8-endpointslices)
+9. [Service Without Selector](#9-service-without-selector)
+10. [Other Useful Service Fields](#10-other-useful-service-fields)
+11. [Service + Deployment](#11-service--deployment)
+12. [Service vs Ingress](#12-service-vs-ingress)
+13. [Service IP vs Pod IP](#13-service-ip-vs-pod-ip)
+14. [Command Cheat Sheet](#14-command-cheat-sheet)
+15. [Troubleshooting](#15-troubleshooting)
+16. [Interview Questions](#16-interview-questions)
+17. [Memory Diagram & Final Answer](#17-memory-diagram--final-answer)
 
-| Type | What | DNS Behavior | Use Case |
-|---|---|---|---|
-| ClusterIP (default) | Internal VIP only | svc.ns.svc.cluster.local → ClusterIP | Internal APIs, DBs, caches |
-| NodePort | External via NodeIP:30xxx | Same + NodeIP:NodePort externally | Dev/test ONLY |
-| LoadBalancer | Cloud LB with public IP | cloud-controller provisions ALB/NLB | Production APIs |
-| ExternalName | CNAME to external hostname | CoreDNS returns CNAME — no Pods | External RDS alias |
-| Headless (clusterIP:None) | Returns Pod IPs directly | DNS returns all Pod IPs — no VIP | StatefulSets |
+---
 
-### DNS Formats
+# 1. What / Why / How
 
+| | |
+|---|---|
+| **WHAT** | A Service provides a **stable virtual IP and DNS name** for a dynamic group of Pods, selected by **label selector**. |
+| **WHY** | Pod IPs change on every restart or recreation, so hardcoded Pod IPs break on every deployment. Stable Service DNS → stable ClusterIP → dynamic Pod IPs (Endpoints). |
+| **HOW** | **CoreDNS** creates an A record `svc.ns.svc.cluster.local → ClusterIP`. **kube-proxy** programs rules (iptables/IPVS/nftables) that translate `ClusterIP:port` to a healthy **Pod IP** from the endpoints. |
+
+```text
+Client
+   |
+   v
+Service   (stable IP + DNS)
+   |
+   +---- Pod 1
+   +---- Pod 2
+   +---- Pod 3
 ```
-payment-service                                    # same namespace
-payment-service.cmg-payments                       # with namespace
-payment-service.cmg-payments.svc.cluster.local     # full FQDN (always works)
-mysql-0.mysql-headless.cmg-data.svc.cluster.local  # StatefulSet per-pod DNS
+
+> 🧠 **Remember:** Service = stable network access to Pods.
+
+---
+
+# 2. The Problem: Pod IPs Change
+
+```text
+Before:                         Pod 2 deleted:
+Pod 1 → 10.244.1.10             Pod 1 → 10.244.1.10
+Pod 2 → 10.244.1.11    ──►      Pod 2 ❌
+Pod 3 → 10.244.2.10             Pod 3 → 10.244.2.10
+                                Pod 4 → 10.244.2.15   ← new IP
 ```
 
-### Service YAML Examples
+Clients using Pod IPs directly would have to keep re-discovering addresses. With a Service:
+
+```text
+Client
+  |
+  v
+Service  10.96.10.20      ← never changes
+  |
+  +---- Pod 1
+  +---- Pod 3
+  +---- Pod 4             ← backends change, Service address does not
+```
+
+> The ClusterIP does **not** change even when **all** Pods are replaced.
+
+---
+
+# 3. How a Request Flows (DNS → ClusterIP → Pod)
+
+> ⚠️ **Service DNS does NOT point directly to a Pod.**
+
+```text
+   App Pod
+      │  curl payment-service.cmg-payments
+      ▼
+  ┌─────────┐   1. DNS query
+  │ CoreDNS │──────────────► returns ClusterIP  (10.96.10.20)
+  └─────────┘
+      │
+      ▼  2. packet sent to 10.96.10.20:80
+  ┌────────────────────────────────────────────┐
+  │ Node: kube-proxy rules (iptables / IPVS)   │
+  │ DNAT: ClusterIP:80 → PodIP:8080            │   3. picks a healthy endpoint
+  └────────────────────────────────────────────┘
+      │
+      ▼
+   Backend Pod (10.244.x.x:8080)
+```
+
+**Three layers to remember**
+
+```text
+Service DNS (stable)  →  ClusterIP (stable)  →  Endpoints (dynamic Pod IPs)
+```
+
+| Component       | Role                                                               |
+| --------------- | ------------------------------------------------------------------ |
+| **CoreDNS**     | Resolves service names to ClusterIP                                |
+| **kube-proxy**  | Programs node rules to forward ClusterIP traffic to Pod IPs        |
+| **EndpointSlice** | Holds the list of ready Pod IPs behind the Service               |
+
+---
+
+# 4. Service YAML, Selector & Ports
+
+## 4.1 Basic Service
 
 ```yaml
-# ClusterIP (default)
 apiVersion: v1
 kind: Service
 metadata:
   name: payment-service
   namespace: cmg-payments
 spec:
-  type: ClusterIP
+  type: ClusterIP              # default
   selector:
-    app: payment-service  # must EXACTLY match Pod labels
+    app: payment-service       # must EXACTLY match Pod labels
   ports:
-  - name: http
-    port: 80
+    - name: http
+      port: 80                 # Service port
+      targetPort: 8080         # Pod/container port
+  sessionAffinity: None        # or ClientIP for sticky sessions
+```
+
+Important fields: `selector`, `ports`, `type`.
+
+## 4.2 `selector`
+
+```text
+Service selector: app=payment-service
+            ↓
++-----------+-----------+
+|           |           |
+Pod 1      Pod 2      Pod 3      ← Pods with label app=payment-service
+```
+
+## 4.3 `port` vs `targetPort` vs `nodePort`
+
+```yaml
+ports:
+  - port: 80
     targetPort: 8080
-  sessionAffinity: None   # or ClientIP for sticky sessions
+```
+
+```text
+Client
+  |  :80
+  ▼
+Service :80
+  |  forwards to :8080
+  ▼
+Pod :8080
+```
+
+| Field        | Meaning                                       |
+| ------------ | --------------------------------------------- |
+| `port`       | Port exposed by the **Service**               |
+| `targetPort` | Port on the **Pod/container** receiving traffic |
+| `nodePort`   | Port opened on **every node** (NodePort/LoadBalancer types only) |
+
+> 🧠 **port = Service port · targetPort = App/Pod port**
 
 ---
-# Headless Service (for StatefulSet)
-apiVersion: v1
-kind: Service
-metadata:
-  name: mysql-headless
-  namespace: cmg-data
+
+# 5. Service Types
+
+## 5.1 Overview
+
+| Type | What | DNS Behavior | Use Case |
+| --- | --- | --- | --- |
+| **ClusterIP** *(default)* | Internal virtual IP only | `svc.ns.svc.cluster.local` → ClusterIP | Internal APIs, DBs, caches |
+| **NodePort** | External via `NodeIP:30xxx` | Same as ClusterIP, plus `NodeIP:NodePort` externally | Dev/test only |
+| **LoadBalancer** | Cloud LB with public/external IP | Cloud controller provisions ALB/NLB | Production APIs |
+| **ExternalName** | CNAME to an external hostname | CoreDNS returns a CNAME, no Pods involved | External RDS alias |
+| **Headless** (`clusterIP: None`) | Returns Pod IPs directly | DNS returns all Pod IPs, no VIP | StatefulSets |
+
+## 5.2 How the types build on each other
+
+```text
+┌──────────────────────────────────────────┐
+│ LoadBalancer                             │
+│   ┌──────────────────────────────────┐   │
+│   │ NodePort                         │   │
+│   │   ┌──────────────────────────┐   │   │
+│   │   │ ClusterIP                │   │   │
+│   │   └──────────────────────────┘   │   │
+│   └──────────────────────────────────┘   │
+└──────────────────────────────────────────┘
+Each outer type includes the inner ones.
+```
+
+## 5.3 ClusterIP
+
+* Default type, reachable **only inside the cluster**.
+* Gets a virtual ClusterIP.
+
+```text
+Frontend Pod ──► backend-service (ClusterIP 10.96.20.10) ──► Backend Pods
+```
+
+> 🧠 ClusterIP = internal cluster access.
+
+## 5.4 NodePort
+
+* Opens the same port on **every node**.
+* Default range: **30000–32767**.
+
+```text
+Client
+   | NodeIP:30080
+   ▼
+Worker Node
+   ▼
+Service ─► Pod
+```
+
+```yaml
 spec:
-  clusterIP: None         # THIS makes it headless
+  type: NodePort
   selector:
-    app: mysql
+    app: nginx
   ports:
-  - name: mysql
-    port: 3306
+    - port: 80
+      targetPort: 80
+      nodePort: 30080
+```
 
----
-# ExternalName
+## 5.5 LoadBalancer
+
+* Exposes the Service through an external load balancer.
+* In cloud environments, the cloud integration provisions it. On AWS that is an ALB/NLB. The exact behavior depends on the provider and cluster setup.
+
+```text
+Internet
+    ▼
+Cloud Load Balancer
+    ▼
+Kubernetes Service
+    ├── Pod
+    ├── Pod
+    └── Pod
+```
+
+```yaml
+spec:
+  type: LoadBalancer
+  selector:
+    app: payment-service
+  ports:
+    - port: 443
+      targetPort: 8080
+```
+
+## 5.6 ExternalName
+
+* Maps a Service name to an external DNS name (CoreDNS returns a **CNAME**).
+* No selector, no ClusterIP, no Pods, no proxying.
+
+```yaml
 apiVersion: v1
 kind: Service
 metadata:
@@ -2491,38 +2696,393 @@ spec:
   externalName: cmg-oracle.abcdef.eu-west-2.rds.amazonaws.com
 ```
 
-### EndpointSlices
+```text
+App ─► oracle-db ─(CNAME)─► cmg-oracle.abcdef.eu-west-2.rds.amazonaws.com
+```
 
-- Modern replacement for Endpoints object (K8s 1.21+ default)
-- Max 100 endpoints per slice — only affected slice updated on Pod change
-- Much more efficient for large services (1000+ Pods)
+Apps use `oracle-db`, so the real hostname can change later without touching app config.
+
+## 5.7 Headless Service
+
+* Set `clusterIP: None`. There is **no virtual IP** and **no load balancing** by kube-proxy.
+* DNS returns the **Pod IPs directly**.
+* Used with **StatefulSets** for stable per-Pod DNS.
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql-headless
+  namespace: cmg-data
+spec:
+  clusterIP: None          # THIS makes it headless
+  selector:
+    app: mysql
+  ports:
+    - name: mysql
+      port: 3306
+```
+
+```text
+Normal Service:   DNS ─► ClusterIP (1 virtual IP)
+Headless Service: DNS ─► Pod IP 1, Pod IP 2, Pod IP 3
+
+Per-Pod DNS (StatefulSet):
+mysql-0.mysql-headless.cmg-data.svc.cluster.local
+mysql-1.mysql-headless.cmg-data.svc.cluster.local
+```
+
+> The StatefulSet must set `serviceName: mysql-headless` for per-Pod DNS names to work.
+
+---
+
+# 6. Service DNS Formats
+
+```text
+payment-service                                     # same namespace
+payment-service.cmg-payments                        # with namespace
+payment-service.cmg-payments.svc.cluster.local      # full FQDN (always works)
+mysql-0.mysql-headless.cmg-data.svc.cluster.local   # StatefulSet per-Pod DNS
+```
+
+Pattern:
+
+```text
+<service-name>.<namespace>.svc.<cluster-domain>
+```
+
+| Caller location        | What works                                  |
+| ---------------------- | ------------------------------------------- |
+| Same namespace         | `payment-service`                           |
+| Different namespace    | `payment-service.cmg-payments` or the FQDN  |
+
+---
+
+# 7. Load Balancing & kube-proxy
+
+```text
+Service
+   ├── Pod 1
+   ├── Pod 2
+   └── Pod 3
+
+Request 1 → Pod 1
+Request 2 → Pod 2
+Request 3 → Pod 3
+Request 4 → Pod 1
+```
+
+* Traffic is distributed across **ready** endpoints. In **iptables** mode, selection is effectively random. **IPVS** mode supports other algorithms such as round-robin.
+* kube-proxy modes: `iptables`, `IPVS`, and `nftables` on newer versions, depending on configuration.
+* Only Pods that pass their **readiness probe** receive traffic.
+
+**Session stickiness:**
+
+```yaml
+sessionAffinity: ClientIP     # same client IP → same Pod
+```
+
+---
+
+# 8. EndpointSlices
+
+Modern replacement for the classic `Endpoints` object (default since Kubernetes 1.21).
+
+```text
+Service
+   ▼
+EndpointSlice
+   ├── Pod IP
+   ├── Pod IP
+   └── Pod IP
+```
+
+* Max **100 endpoints per slice** by default. When a Pod changes, only the affected slice is updated.
+* Much more efficient for large Services (1000+ Pods).
+* kube-proxy and other components read them to implement routing.
 
 ```bash
 kubectl get endpointslices -n cmg-payments
 kubectl describe endpointslice payment-service-xyz -n cmg-payments
 ```
 
-### Service Troubleshooting
+---
+
+# 9. Service Without Selector
+
+```yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: external-service
+spec:
+  ports:
+    - port: 80
+```
+
+* No selector means Kubernetes creates **no** endpoints automatically.
+* You define the backends yourself with an **EndpointSlice** (or Endpoints) object.
+* Useful when the backend is **not a normal Pod**, such as an external server or a legacy system.
+
+---
+
+# 10. Other Useful Service Fields
+
+| Field | Purpose |
+| --- | --- |
+| `sessionAffinity: ClientIP` | Sticky sessions per client IP |
+| `externalTrafficPolicy: Local` | For NodePort/LoadBalancer: preserves the client source IP and avoids an extra hop, but only nodes with local Pods serve traffic |
+| `ports[].name` | Required when a Service has multiple ports |
+| `targetPort: <name>` | Refer to a **named** container port instead of a number |
+
+---
+
+# 11. Service + Deployment
+
+```text
+                 Service
+                    |
+             selector: app=web
+                    |
+       +------------+------------+
+       |            |            |
+     Pod 1        Pod 2        Pod 3
+       ↑            ↑            ↑
+       +------------+------------+
+                    |
+                ReplicaSet
+                    ↑
+                Deployment
+```
+
+| Object         | Job                                |
+| -------------- | ---------------------------------- |
+| **Deployment** | Manages rollouts and ReplicaSets   |
+| **ReplicaSet** | Maintains the Pod replica count    |
+| **Service**    | Provides stable network access     |
+
+---
+
+# 12. Service vs Ingress
+
+**Service**: network access to Pods.
+
+```text
+Client ─► Service ─► Pods
+```
+
+**Ingress**: HTTP/HTTPS routing to Services (needs an Ingress controller).
+
+```text
+Internet
+   ▼
+Ingress
+   ├── example.com/api ─► backend-service  ─► Pods
+   └── example.com/web ─► frontend-service ─► Pods
+```
+
+| Service                            | Ingress                                   |
+| ---------------------------------- | ----------------------------------------- |
+| L4 (TCP/UDP) stable endpoint       | L7 (HTTP/HTTPS) routing                   |
+| One Service per exposure           | One entry point for many Services         |
+| No host/path rules                 | Host and path rules, TLS termination      |
+
+> Modern clusters may also use **Gateway API** for more advanced traffic management.
+
+---
+
+# 13. Service IP vs Pod IP
+
+| Pod IP | Service IP |
+| --- | --- |
+| Usually changes when the Pod is recreated | Stable virtual address |
+| Represents an individual Pod | Represents the Service |
+| Not a stable application endpoint | Stable internal endpoint |
+| Tied to Pod lifecycle | Independent of individual Pod lifecycle |
+
+---
+
+# 14. Command Cheat Sheet
+
+### Create / view
 
 ```bash
-# Step 1: Check Endpoints — if EMPTY = selector mismatch (most common!)
+kubectl apply -f service.yaml
+kubectl expose deployment nginx-deployment --port=80 --target-port=8080 --type=ClusterIP
+kubectl get svc
+kubectl get svc -n cmg-payments -o wide
+kubectl describe svc payment-service
+kubectl get svc payment-service -o yaml
+```
+
+### Endpoints
+
+```bash
 kubectl get endpoints payment-service -n cmg-payments
+kubectl get endpointslices -n cmg-payments
+kubectl describe endpointslice <name> -n cmg-payments
+```
 
-# Step 2: Compare selector vs Pod labels
-kubectl describe svc payment-service | grep Selector
+> `kubectl get endpoints` is deprecated in newer Kubernetes versions in favor of EndpointSlices, but it is still widely used.
+
+### Labels
+
+```bash
 kubectl get pods --show-labels -n cmg-payments
+kubectl get pods -l app=payment-service -n cmg-payments
+```
 
-# Step 3: Is readinessProbe passing?
-kubectl get pods -n cmg-payments   # READY column must be 1/1
+### Test connectivity and DNS
 
-# Step 4: Test internally
-kubectl exec -it debug-pod -- curl http://payment-service.cmg-payments:80/health
+```bash
+# throw-away debug Pod
+kubectl run debug --rm -it --image=busybox:1.36 -- sh
 
-# Step 5: Check kube-proxy rules
+nslookup payment-service.cmg-payments
+wget -qO- http://payment-service.cmg-payments:80/health
+
+# from an existing Pod
+kubectl exec -it <pod> -- curl http://payment-service.cmg-payments:80/health
+
+# from your laptop
+kubectl port-forward svc/payment-service 8080:80 -n cmg-payments
+```
+
+### Node level (kube-proxy rules)
+
+```bash
 iptables -t nat -L -n | grep <ClusterIP>
 ```
 
+### Delete
+
+```bash
+kubectl delete svc payment-service
+```
+
 ---
+
+# 15. Troubleshooting
+
+## 15.1 Service not reachable? Follow this flow
+
+```text
+Step 1  Endpoints empty?  ──► SELECTOR MISMATCH  (most common cause!)
+           kubectl get endpoints payment-service -n cmg-payments
+                │
+Step 2  Compare selector vs Pod labels
+           kubectl describe svc payment-service | grep Selector
+           kubectl get pods --show-labels -n cmg-payments
+                │
+Step 3  Is the readinessProbe passing?
+           kubectl get pods -n cmg-payments      (READY must be 1/1)
+                │
+Step 4  Test from inside the cluster
+           kubectl exec -it debug-pod -- curl http://payment-service.cmg-payments:80/health
+                │
+Step 5  Check kube-proxy rules on the node
+           iptables -t nat -L -n | grep <ClusterIP>
+```
+
+## 15.2 Symptom → cause
+
+| Symptom | Likely cause |
+| --- | --- |
+| Endpoints **empty** | Selector doesn't match Pod labels, or no Pods are Ready |
+| Pods `0/1 Ready` | Readiness probe failing, so the Pod is removed from endpoints |
+| Connection refused | Wrong `targetPort`, or the app isn't listening on that port |
+| DNS name not resolving | Wrong namespace or name, CoreDNS problem |
+| Works in-cluster, not externally | Type is `ClusterIP`. Use NodePort, LoadBalancer or Ingress |
+| LoadBalancer stuck `<pending>` | No cloud integration or LB controller, or quota issue |
+| Timeout only from other namespaces | NetworkPolicy blocking, or you used the short name instead of the FQDN |
+
+---
+
+# 16. Interview Questions
+
+**Q1. What is a Service?**
+> A Service provides a stable network endpoint and DNS name for accessing a set of Pods.
+
+**Q2. Why do we need a Service?**
+> Pod IPs are ephemeral. A Service provides a stable endpoint while Pods are created, deleted or replaced.
+
+**Q3. What is the default Service type?**
+> **ClusterIP**
+
+**Q4. Difference between `port` and `targetPort`?**
+> `port` is the port the Service exposes. `targetPort` is the port on the backend Pod where traffic is forwarded.
+
+**Q5. How does a Service find its Pods?**
+> Through its **label selector**.
+
+**Q6. Does Service DNS point directly to a Pod?**
+> No. DNS resolves to the ClusterIP. kube-proxy rules on the node then translate it to a Pod IP from the endpoints. (Headless Services are the exception, since DNS returns Pod IPs.)
+
+**Q7. What is NodePort?**
+> It exposes the Service on a port (30000–32767) on every node, so external clients can reach it at `NodeIP:NodePort`. It is mainly for dev/test.
+
+**Q8. What is LoadBalancer?**
+> It exposes the Service through an external load balancer, typically provisioned by the cloud provider. It is used for production external access.
+
+**Q9. What is ExternalName?**
+> A Service that returns a CNAME to an external hostname. It has no selector, no ClusterIP and no proxying.
+
+**Q10. What is a Headless Service?**
+> A Service with `clusterIP: None`. DNS returns the Pod IPs directly, and it is used with StatefulSets for stable per-Pod DNS.
+
+**Q11. What if a Service has no matching Pods?**
+> The Service still exists, but it has no ready endpoints, so traffic has nowhere to go.
+
+**Q12. Service returns nothing. What do you check first?**
+> Check **endpoints**. If they are empty, compare the Service selector with the Pod labels, then check that the readiness probe is passing.
+
+**Q13. What are EndpointSlices?**
+> The scalable API representation of a Service's backend endpoints, replacing the single large Endpoints object. Each slice holds up to 100 endpoints by default.
+
+**Q14. How does DNS resolution work for a Service?**
+> CoreDNS creates the record `svc.ns.svc.cluster.local → ClusterIP`. Same-namespace callers can use the short name.
+
+**Q15. Service vs Ingress?**
+> A Service gives L4 stable access to Pods. An Ingress gives L7 HTTP/HTTPS host and path routing to Services.
+
+**Q16. Does the ClusterIP change if all Pods are replaced?**
+> No. The ClusterIP is tied to the Service object, not to the Pods.
+
+---
+
+# 17. Memory Diagram & Final Answer
+
+```text
+                 SERVICE
+                    |
+          Stable IP + DNS
+                    |
+             Label Selector
+                    |
+        +-----------+-----------+
+        |           |           |
+      Pod 1       Pod 2       Pod 3
+        ↑           ↑           ↑
+        +-----------+-----------+
+                    |
+                ReplicaSet
+                    ↑
+                Deployment
+```
+
+### Quick type memory
+
+```text
+ClusterIP    → inside the cluster
+NodePort     → NodeIP:30000-32767
+LoadBalancer → cloud LB / public access
+ExternalName → CNAME to an outside host
+Headless     → Pod IPs directly (StatefulSet)
+```
+
+### ⭐ Senior-level one-line answer
+
+> **A Kubernetes Service provides a stable virtual IP and DNS name for a dynamic set of Pods, using label selectors to find backends. CoreDNS resolves the name to the ClusterIP, and kube-proxy forwards traffic to healthy Pod IPs from the EndpointSlices. It can be exposed as ClusterIP, NodePort, LoadBalancer, ExternalName or Headless depending on the use case.**
 
 ## S06 — NETWORKING (CNI · kube-proxy · CoreDNS)
 
