@@ -1783,39 +1783,150 @@ spec:
 
 ## S04 — DEPLOYMENTS
 
-**WHAT:** Deployment manages Pods via ReplicaSets providing rolling updates, rollbacks, and replica count maintenance.
+# 🚀 Kubernetes Deployment — Complete Interview Notes
 
-**WHY:** Update app versions without downtime. Roll back instantly if something breaks. Maintain desired Pod count automatically.
+> **One-liner:** A Deployment gives declarative lifecycle management for stateless workloads. It manages ReplicaSets, which maintain the Pod count, and adds rolling updates, rollbacks and scaling.
 
-**HOW:** Image change → new RS created → Pods migrated per maxSurge/maxUnavailable → old RS scaled to 0 (kept for rollback).
+---
 
-### Update Strategies
+## 📑 Contents
 
-| Strategy | Behavior | Downtime | Use Case |
-|---|---|---|---|
-| RollingUpdate | Replaces Pods gradually | Zero (if maxUnavailable:0) | All stateless services |
-| Recreate | Kills ALL old Pods first | Yes — full outage | Breaking DB schema changes |
-| Blue-Green | Two Deployments, switch Service selector | None — instant cutover | Zero-risk releases |
-| Canary | Small % to new version, monitor, increase | None | Risk mitigation |
+1. [What / Why / How](#1-what--why--how)
+2. [Hierarchy: Deployment → ReplicaSet → Pod](#2-hierarchy-deployment--replicaset--pod)
+3. [Deployment YAML](#3-deployment-yaml)
+4. [How a Rolling Update Works](#4-how-a-rolling-update-works)
+5. [Update Strategies](#5-update-strategies)
+6. [Rollout, History & Rollback](#6-rollout-history--rollback)
+7. [Scaling & HPA](#7-scaling--hpa)
+8. [Self-Healing](#8-self-healing)
+9. [Deployment + Service](#9-deployment--service)
+10. [Deployment vs StatefulSet](#10-deployment-vs-statefulset)
+11. [Command Cheat Sheet](#11-command-cheat-sheet)
+12. [Troubleshooting](#12-troubleshooting)
+13. [Interview Questions](#13-interview-questions)
+14. [Memory Flow & Final Answer](#14-memory-flow--final-answer)
 
-### Rolling Update Internals
+---
 
+# 1. What / Why / How
+
+| | |
+|---|---|
+| **WHAT** | A workload controller, mainly for **stateless** apps. It manages **ReplicaSets**, and ReplicaSets manage **Pods**. |
+| **WHY** | Update app versions **without downtime**, **roll back** instantly if something breaks, and keep the **desired Pod count** automatically. |
+| **HOW** | Image change → **new ReplicaSet** created → Pods migrated per `maxSurge` / `maxUnavailable` → old ReplicaSet scaled to **0** (kept for rollback). |
+
+### What a Deployment provides
+
+* ✅ Replica management
+* ✅ Rolling updates
+* ✅ Rollbacks
+* ✅ Scaling (manual or HPA)
+* ✅ Self-healing (through ReplicaSet)
+* ✅ Version / revision history
+* ✅ Declarative management
+
+```text
+Without Deployment:   Pod → you manage it manually
+
+With Deployment:      Deployment
+                          ↓
+                      ReplicaSet
+                          ↓
+                       3 Pods
 ```
-replicas=4, maxSurge=1, maxUnavailable=0:
 
-Start:  [v1][v1][v1][v1]
-Step 1: [v1][v1][v1][v1][v2]  ← surge: +1 new Pod created
-Step 2: [v1][v1][v1][v2]      ← v2 readiness passes → kill 1 v1
-Step 3: [v1][v1][v1][v2][v2]  ← create another v2
-Step 4: [v1][v1][v2][v2]      ← another v2 ready → kill 1 v1
-...
-Done:   [v2][v2][v2][v2]      ← ZERO DOWNTIME
+> 🧠 **Remember:** Deployment = manages application rollout and desired Pod state.
 
-Rollback = scale up old RS (v1) + scale down current RS (v2)
-          No new RS created on rollback — re-activates existing RS
+---
+
+# 2. Hierarchy: Deployment → ReplicaSet → Pod
+
+```text
+Deployment
+    ↓
+ReplicaSet
+    ↓
+Pods
+    ↓
+Containers
 ```
 
-### Production Deployment YAML
+| Component      | Main Responsibility                          |
+| -------------- | -------------------------------------------- |
+| **Pod**        | Runs containers                              |
+| **ReplicaSet** | Maintains the desired number of Pods         |
+| **Deployment** | Manages ReplicaSets and application rollouts |
+
+### During an update, a Deployment holds multiple ReplicaSets
+
+```text
+                  Deployment
+                      |
+          +-----------+-----------+
+          |                       |
+    ReplicaSet v1           ReplicaSet v2
+    (old, scaled to 0)      (new, active)
+          |                       |
+       old Pods                new Pods
+```
+
+> The Deployment manages the ReplicaSet; the ReplicaSet maintains the Pod count.
+
+---
+
+# 3. Deployment YAML
+
+## 3.1 Basic
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+
+metadata:
+  name: nginx-deployment
+
+spec:
+  replicas: 3
+
+  selector:
+    matchLabels:
+      app: nginx
+
+  template:
+    metadata:
+      labels:
+        app: nginx
+
+    spec:
+      containers:
+        - name: nginx
+          image: nginx:1.27
+          ports:
+            - containerPort: 80
+```
+
+## 3.2 Key fields
+
+| Field        | Meaning                                                       |
+| ------------ | ------------------------------------------------------------- |
+| `replicas`   | Number of Pod replicas to maintain                            |
+| `selector`   | Identifies which Pods the Deployment's ReplicaSet manages     |
+| `template`   | Blueprint used to create new Pods                             |
+
+**Labels must match:**
+
+```text
+selector.matchLabels     app: nginx
+          ↑
+          must match
+          ↓
+template.metadata.labels app: nginx
+```
+
+> ⚠️ `spec.selector` is **immutable** after creation.
+
+## 3.3 Production-grade YAML
 
 ```yaml
 apiVersion: apps/v1
@@ -1824,19 +1935,19 @@ metadata:
   name: payment-service
   namespace: cmg-payments
   annotations:
-    kubernetes.io/change-cause: "v2.0 - fixed payment processing bug"  # shows in rollout history
+    kubernetes.io/change-cause: "v2.0 - fixed payment processing bug"   # shows in rollout history
 spec:
   replicas: 3
   selector:
     matchLabels:
-      app: payment-service    # IMMUTABLE after creation
+      app: payment-service          # IMMUTABLE after creation
   strategy:
     type: RollingUpdate
-    rollingUpdate:            # ONLY maxSurge + maxUnavailable go here
-      maxSurge: 1             # ✅ correct location
+    rollingUpdate:                  # ONLY maxSurge + maxUnavailable go here
+      maxSurge: 1
       maxUnavailable: 0
-  revisionHistoryLimit: 5     # ✅ goes under spec, NOT under rollingUpdate
-  minReadySeconds: 10         # ✅ goes under spec, NOT under rollingUpdate
+  revisionHistoryLimit: 5           # under spec, NOT under rollingUpdate
+  minReadySeconds: 10               # under spec, NOT under rollingUpdate
   progressDeadlineSeconds: 600
   template:
     metadata:
@@ -1844,27 +1955,464 @@ spec:
         app: payment-service
     spec:
       containers:
-      - name: payment-service
-        image: ecr.../payment:v2.0
-        resources:
-          requests: {memory: "256Mi", cpu: "250m"}
-          limits:   {memory: "512Mi", cpu: "500m"}
+        - name: payment-service
+          image: <account>.dkr.ecr.<region>.amazonaws.com/payment:v2.0
+          resources:
+            requests: { memory: "256Mi", cpu: "250m" }
+            limits:   { memory: "512Mi", cpu: "500m" }
 ```
 
-### Key Commands
+## 3.4 Other important `spec` fields
+
+| Field                     | Purpose                                                        | Default        |
+| ------------------------- | -------------------------------------------------------------- | -------------- |
+| `revisionHistoryLimit`    | How many old ReplicaSets are kept for rollback                 | `10`           |
+| `minReadySeconds`         | Time a new Pod must be Ready before it counts as available     | `0`            |
+| `progressDeadlineSeconds` | Time before the rollout is reported as failed (no progress)    | `600`          |
+| `strategy.type`           | `RollingUpdate` or `Recreate`                                  | `RollingUpdate` |
+| `maxSurge`                | Extra Pods allowed above desired count during update           | `25%`          |
+| `maxUnavailable`          | Pods allowed to be unavailable during update                   | `25%`          |
+
+> ⚠️ `maxSurge` and `maxUnavailable` **cannot both be 0**.
+
+---
+
+# 4. How a Rolling Update Works
+
+You change the image:
+
+```text
+nginx:1.27  ──►  nginx:1.28
+```
+
+```text
+Before:
+Deployment ─► ReplicaSet v1 ─► 3 Pods
+
+After the update starts:
+Deployment
+    ├── ReplicaSet v1 ─► old Pods  (scaled down gradually)
+    └── ReplicaSet v2 ─► new Pods  (scaled up gradually)
+```
+
+## 4.1 Step-by-step (`replicas=4`, `maxSurge=1`, `maxUnavailable=0`)
+
+```text
+Start:   [v1][v1][v1][v1]
+Step 1:  [v1][v1][v1][v1][v2]   ← surge: +1 new Pod created
+Step 2:  [v1][v1][v1][v2]       ← v2 readiness passes → kill 1 v1
+Step 3:  [v1][v1][v1][v2][v2]   ← create another v2
+Step 4:  [v1][v1][v2][v2]       ← another v2 ready → kill 1 v1
+...
+Done:    [v2][v2][v2][v2]       ← ZERO DOWNTIME
+```
+
+> Zero downtime also depends on a correct **readiness probe**. Without one, Kubernetes treats a Pod as ready once its container starts.
+
+## 4.2 `maxSurge` and `maxUnavailable`
+
+**`maxSurge`** — max extra Pods above the desired count.
+
+```text
+replicas = 5, maxSurge = 1
+Peak Pods = 5 + 1 = 6
+```
+
+**`maxUnavailable`** — max Pods that can be unavailable.
+
+```text
+replicas = 5, maxUnavailable = 1
+At least ~4 Pods stay available (subject to readiness)
+```
+
+| Setting                                | Effect                                        |
+| -------------------------------------- | --------------------------------------------- |
+| `maxSurge: 1`, `maxUnavailable: 0`     | Safest — always full capacity, needs spare resources |
+| `maxSurge: 0`, `maxUnavailable: 1`     | No extra resources, but capacity dips         |
+| Higher values                          | Faster rollout, more risk or resource use     |
+
+---
+
+# 5. Update Strategies
+
+| Strategy          | Behavior                                    | Downtime                      | Use Case                       |
+| ----------------- | ------------------------------------------- | ----------------------------- | ------------------------------ |
+| **RollingUpdate** | Replaces Pods gradually (**default**)       | Zero (if `maxUnavailable: 0`) | All stateless services         |
+| **Recreate**      | Kills **all** old Pods first, then creates new | Yes — full outage          | Breaking DB schema changes     |
+| **Blue-Green**    | Two Deployments, switch Service selector    | None — instant cutover        | Zero-risk releases             |
+| **Canary**        | Small % to new version, monitor, increase   | None                          | Risk mitigation                |
+
+> RollingUpdate and Recreate are built into Deployment. Blue-Green and Canary are **deployment patterns** built with extra objects (Services, or tools such as Argo Rollouts / Istio).
+
+## 5.1 Recreate
+
+```yaml
+strategy:
+  type: Recreate
+```
+
+```text
+Old Pods ──► Deleted ──► New Pods ──► Started      (downtime in between)
+```
+
+## 5.2 Blue-Green
+
+```text
+                    ┌──► Deployment BLUE  (v1)  ← live
+   Service ─────────┤
+ (selector: v1)     └──► Deployment GREEN (v2)  ← tested, idle
+
+Cutover: change the Service selector  v1 → v2
+
+   Service ─────────┐
+ (selector: v2)     └──► Deployment GREEN (v2)  ← now live
+                         BLUE kept for instant rollback
+```
 
 ```bash
-kubectl set image deploy/payment-service payment-service=ecr.../payment:v2.0
-kubectl rollout status deploy/payment-service -n cmg-payments
-kubectl rollout history deploy/payment-service
-kubectl rollout undo deploy/payment-service --to-revision=1
-kubectl rollout restart deploy/payment-service   # rolling restart, same image
-kubectl scale deploy payment-service --replicas=10
-kubectl rollout pause deploy/payment-service     # pause mid-rollout
-kubectl rollout resume deploy/payment-service    # resume
+kubectl patch svc payment-service \
+  -p '{"spec":{"selector":{"app":"payment-service","version":"v2"}}}'
+```
+
+## 5.3 Canary
+
+```text
+                          ┌──► Deployment STABLE (v1) — 9 Pods  ≈ 90%
+  Service (app=payment) ──┤
+                          └──► Deployment CANARY (v2) — 1 Pod   ≈ 10%
+```
+
+Both Deployments share the label the Service selects. Traffic split follows the Pod ratio. If metrics look good, scale the canary up and the stable down.
+
+---
+
+# 6. Rollout, History & Rollback
+
+## 6.1 Update the image
+
+```bash
+kubectl set image deployment/nginx-deployment nginx=nginx:1.28
+kubectl rollout status deployment/nginx-deployment
+```
+
+## 6.2 History
+
+```bash
+kubectl rollout history deployment/nginx-deployment
+kubectl rollout history deployment/nginx-deployment --revision=2
+```
+
+The `kubernetes.io/change-cause` annotation is what appears in the CHANGE-CAUSE column.
+
+```bash
+kubectl annotate deployment/payment-service \
+  kubernetes.io/change-cause="v2.0 - fixed payment processing bug" --overwrite
+```
+
+## 6.3 Rollback
+
+```bash
+kubectl rollout undo deployment/nginx-deployment                     # previous revision
+kubectl rollout undo deployment/nginx-deployment --to-revision=2     # specific revision
+```
+
+```text
+Rollback = scale up the old RS (v1) + scale down the current RS (v2)
+           No brand-new RS is needed. It re-activates the existing one.
+```
+
+> 🧠 Rollback is possible because the Deployment keeps old ReplicaSets, up to `revisionHistoryLimit`.
+
+## 6.4 Pause / Resume / Restart
+
+```bash
+kubectl rollout pause   deployment/payment-service    # pause mid-rollout
+kubectl rollout resume  deployment/payment-service    # resume
+kubectl rollout restart deployment/payment-service    # rolling restart, same image
+```
+
+```text
+Use pause to batch several changes (image, env, resources) into ONE rollout.
+Use restart to pick up a changed ConfigMap/Secret without changing the image.
 ```
 
 ---
+
+# 7. Scaling & HPA
+
+```bash
+kubectl scale deployment nginx-deployment --replicas=5
+```
+
+```text
+Deployment ─► ReplicaSet ─► 5 Pods
+```
+
+**Automatic scaling with HPA:**
+
+```text
+Metrics (CPU / memory / custom)
+          ↓
+         HPA
+          ↓
+      Deployment
+          ↓
+      ReplicaSet
+          ↓
+        Pods
+```
+
+```bash
+kubectl autoscale deployment nginx-deployment --min=3 --max=10 --cpu-percent=70
+```
+
+> HPA needs **resource requests** defined on the containers and a metrics source such as metrics-server.
+
+---
+
+# 8. Self-Healing
+
+```text
+Desired = 3, Running = 3
+        │
+   Pod crashes / is deleted
+        ▼
+Desired = 3, Running = 2
+        │
+   ReplicaSet detects the difference
+        ▼
+   Creates a replacement Pod
+        ▼
+Desired = 3, Running = 3
+```
+
+---
+
+# 9. Deployment + Service
+
+Deployment manages Pods. **Service** gives them stable network access.
+
+```text
+              Service  (stable IP / DNS)
+                 |
+        +--------+--------+
+        |        |        |
+      Pod 1    Pod 2    Pod 3
+        ↑        ↑        ↑
+        +--------+--------+
+                 |
+            ReplicaSet
+                 ↑
+            Deployment
+```
+
+> 🧠 **Deployment = workload management. Service = network access.**
+
+---
+
+# 10. Deployment vs StatefulSet
+
+| Deployment                         | StatefulSet                                |
+| ---------------------------------- | ------------------------------------------ |
+| Usually stateless applications     | Stateful applications                      |
+| Pods are interchangeable           | Pods have stable identity                  |
+| Generated Pod names                | Stable, ordered Pod names                  |
+| Example: web / API                 | Example: database                          |
+| Uses shared / external state       | Designed for persistent workloads          |
+
+```text
+Deployment:                    StatefulSet:
+nginx-7d8b9c-x                 mysql-0
+nginx-7d8b9c-y                 mysql-1
+nginx-7d8b9c-z                 mysql-2
+(interchangeable)              (stable identity)
+```
+
+---
+
+# 11. Command Cheat Sheet
+
+### Create / Apply
+
+```bash
+kubectl apply -f deployment.yaml
+kubectl create deployment nginx --image=nginx:1.27 --replicas=3
+kubectl create deployment nginx --image=nginx:1.27 --dry-run=client -o yaml > deployment.yaml
+```
+
+### View
+
+```bash
+kubectl get deployments
+kubectl get deploy -n cmg-payments
+kubectl get deploy -o wide
+kubectl describe deployment nginx-deployment
+kubectl get rs
+kubectl get pods -l app=nginx
+```
+
+### Update
+
+```bash
+kubectl set image deploy/payment-service payment-service=<registry>/payment:v2.0
+kubectl set resources deploy/payment-service --limits=cpu=500m,memory=512Mi
+kubectl edit deployment nginx-deployment
+```
+
+### Rollout
+
+```bash
+kubectl rollout status  deploy/payment-service -n cmg-payments
+kubectl rollout history deploy/payment-service
+kubectl rollout undo    deploy/payment-service --to-revision=1
+kubectl rollout restart deploy/payment-service
+kubectl rollout pause   deploy/payment-service
+kubectl rollout resume  deploy/payment-service
+```
+
+### Scale
+
+```bash
+kubectl scale deploy payment-service --replicas=10
+kubectl autoscale deploy payment-service --min=3 --max=10 --cpu-percent=70
+```
+
+### Debug
+
+```bash
+kubectl describe deploy payment-service
+kubectl describe rs <rs-name>
+kubectl logs deploy/payment-service
+kubectl logs <pod> --previous
+kubectl get events --sort-by=.metadata.creationTimestamp
+```
+
+### Delete
+
+```bash
+kubectl delete deployment nginx-deployment
+```
+
+---
+
+# 12. Troubleshooting
+
+## Rollout stuck?
+
+```text
+kubectl rollout status deploy/<name>
+            ↓
+kubectl get rs                  → is the new RS creating Pods?
+            ↓
+kubectl get pods                → check STATUS
+            ↓
+kubectl describe pod <new-pod>  → check Events
+            ↓
+kubectl logs <new-pod>          → check app errors
+            ↓
+kubectl rollout undo deploy/<name>   → roll back if needed
+```
+
+| Symptom                                | Likely cause                                          |
+| -------------------------------------- | ----------------------------------------------------- |
+| `ImagePullBackOff` / `ErrImagePull`    | Wrong image/tag, registry auth (`imagePullSecrets`)   |
+| `CrashLoopBackOff`                     | App crash, bad config, failing probes                 |
+| New Pods stay `Pending`                | Not enough CPU/memory, taints, unbound PVC            |
+| Rollout hangs, old Pods stay           | New Pods never pass **readiness** probe               |
+| `ProgressDeadlineExceeded`             | No progress within `progressDeadlineSeconds`          |
+| Extra Pods during update               | Normal — `maxSurge` at work                           |
+
+---
+
+# 13. Interview Questions
+
+**Q1. What is a Deployment?**
+> A workload controller mainly for stateless applications. It manages ReplicaSets and provides declarative updates, rolling deployments, scaling and rollback.
+
+**Q2. What happens when you update the image?**
+```text
+Deployment → creates new ReplicaSet → creates new Pods
+          → gradually removes old Pods → old RS scaled to 0
+```
+
+**Q3. What is the default strategy?**
+> **RollingUpdate**
+
+**Q4. What is `maxSurge`?**
+> The maximum number of extra Pods that can be created above the desired count during a rolling update.
+
+**Q5. What is `maxUnavailable`?**
+> The maximum number of Pods that can be unavailable during a rolling update.
+
+**Q6. How do you get zero-downtime deployments?**
+> Use RollingUpdate with `maxUnavailable: 0` and `maxSurge ≥ 1`, plus a correct readiness probe (and optionally `minReadySeconds`).
+
+**Q7. How does rollback work?**
+> The Deployment keeps revision history through old ReplicaSets. `kubectl rollout undo` scales the old ReplicaSet back up and the current one down.
+
+**Q8. Does a Deployment create Pods directly?**
+> No. The Deployment manages ReplicaSets, and the ReplicaSet creates and maintains the Pods.
+
+**Q9. What happens if a Pod is deleted?**
+> The ReplicaSet detects the reduced count and creates a replacement Pod.
+
+**Q10. Where do `revisionHistoryLimit` and `minReadySeconds` go?**
+> Under `spec`, **not** under `rollingUpdate`. Only `maxSurge` and `maxUnavailable` go under `rollingUpdate`.
+
+**Q11. Can you change `spec.selector` after creation?**
+> No. It is immutable.
+
+**Q12. Recreate vs RollingUpdate?**
+> RollingUpdate replaces Pods gradually with no downtime. Recreate removes all old Pods first, then creates new ones, so there is downtime. It suits changes where old and new versions cannot run together.
+
+**Q13. Deployment vs StatefulSet?**
+> Deployment is for stateless apps with interchangeable Pods. StatefulSet is for stateful apps needing stable identity and storage.
+
+**Q14. How do you do Blue-Green or Canary in Kubernetes?**
+> Blue-Green: run two Deployments and switch the Service selector. Canary: run stable and canary Deployments behind one Service and shift the replica ratio (or use Argo Rollouts / a service mesh for precise traffic splitting).
+
+**Q15. How do you restart all Pods without changing the image?**
+> `kubectl rollout restart deployment/<name>`. It does a rolling restart.
+
+---
+
+# 14. Memory Flow & Final Answer
+
+### Create flow
+
+```text
+kubectl apply
+      ↓
+API Server
+      ↓
+Deployment
+      ↓
+ReplicaSet
+      ↓
+Pods
+      ↓
+Containers
+```
+
+### Update flow
+
+```text
+Deployment
+     ↓
+New ReplicaSet
+     ↓
+New Pods
+     ↓
+Rolling Update (maxSurge / maxUnavailable)
+     ↓
+Old ReplicaSet scaled to 0 (kept for rollback)
+     ↓
+New version running
+```
+
+### ⭐ Senior-level one-line answer
+
+> **A Deployment provides declarative lifecycle management for stateless workloads by managing ReplicaSets, which maintain the desired number of Pods. It handles rolling updates with zero downtime through `maxSurge` and `maxUnavailable`, supports instant rollback using retained ReplicaSet revisions, and scales manually or through HPA.**
 
 ## S05 — SERVICES & DNS
 
