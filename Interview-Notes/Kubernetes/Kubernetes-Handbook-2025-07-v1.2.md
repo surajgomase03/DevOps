@@ -411,200 +411,934 @@ Remember this sequence:
 
 ## S02 — PODS
 
-**WHAT:** Pod is the smallest deployable unit. Wraps 1+ containers sharing same network namespace (same IP) and storage volumes.
+# Kubernetes Pod — Pointwise Interview Notes
 
-**WHY:** K8s needs abstraction over container runtimes. Pod provides: shared localhost (127.0.0.1 between containers), shared volumes, co-scheduling guarantee (all containers on same node).
+## 1. What is a Pod?
 
-**HOW:** kubelet reads Pod spec → containerd pulls image → Linux namespace created → volumes mounted → containers started → health probes run → status reported to apiserver.
+* **Pod is the smallest deployable unit in Kubernetes.**
+* Kubernetes does **not directly deploy containers**.
+* Kubernetes deploys **Pods**.
+* A Pod can contain:
 
-### Pod Lifecycle Phases
+  * One container — most common
+  * Multiple containers — when containers need to work closely together
 
-| Phase | Meaning | Common Cause |
-|---|---|---|
-| Pending | Node not assigned or image pulling or PVC not bound | Insufficient resources, affinity constraints |
-| Running | At least 1 container running | Normal state |
-| Succeeded | All containers exited 0 | Completed Jobs |
-| Failed | All terminated, ≥1 non-zero exit | App crash, OOMKilled |
-| Unknown | apiserver cannot reach kubelet | Node failure, network partition |
-| Terminating | kubectl delete sent, preStop hook running | Manual delete, rolling update |
-
-### Pod Conditions
-
-| Condition | When True |
-|---|---|
-| PodScheduled | Scheduler assigned Pod to a node |
-| Initialized | All init containers completed successfully |
-| ContainersReady | All containers passed readiness probe |
-| Ready | Pod added to Service Endpoints — traffic flows |
-
-### Health Probes — Point-Wise
-
-- **livenessProbe:** Is container ALIVE? Failure → kubelet RESTARTS container. Detects deadlocks, zombies. Use `initialDelaySeconds` so app has time to start.
-- **readinessProbe:** Is container READY for traffic? Failure → Pod REMOVED from Service Endpoints. Detects warm-up period, DB connection failures.
-- **startupProbe:** Protects slow-starting JVM apps. Disables liveness until startup completes. `failureThreshold × periodSeconds` = max allowed startup time.
-
-```yaml
-# Production probe config (Spring Boot — CMG Payment Service)
-livenessProbe:
-  httpGet:
-    path: /actuator/health/liveness
-    port: 8080
-  initialDelaySeconds: 30   # Wait before first check
-  periodSeconds: 10
-  failureThreshold: 3       # Restart after 3 failures
-readinessProbe:
-  httpGet:
-    path: /actuator/health/readiness
-    port: 8080
-  initialDelaySeconds: 15
-  periodSeconds: 5
-  failureThreshold: 3       # Remove from Endpoints after 3 failures
-startupProbe:
-  httpGet:
-    path: /actuator/health
-    port: 8080
-  failureThreshold: 30
-  periodSeconds: 10         # 30×10=300s=5min max to start
+```text
+Pod
+│
+├── Container 1
+└── Container 2
 ```
 
-### restartPolicy
+---
 
-| Policy | Behavior | Use Case |
-|---|---|---|
-| Always | Restart on ANY exit (default) | Deployments — services must always run |
-| OnFailure | Restart only on non-zero exit | Jobs |
-| Never | Never restart | One-shot debug/test Pods |
+## 2. Pod IP
 
-### Multi-Container Patterns
+* A Pod gets **one IP address**.
+* All containers inside the same Pod share the **same network namespace**.
+* Containers can communicate with each other using:
 
-| Feature | Init Container | Sidecar Container |
-|---|---|---|
-| Timing | Runs BEFORE main, sequentially | Runs CONCURRENTLY with main |
-| Exit | Must exit 0 to proceed | Runs forever (normally) |
-| Use case | wait-for-DB, run migrations, set permissions | Fluent Bit, Vault Agent, Envoy proxy |
-| Lifecycle | Disappears after main starts | Same lifecycle as main Pod |
+```text
+localhost
+```
 
-### Production Pod Security Template
+Example:
+
+```text
+Pod IP = 10.244.1.10
+
+Container 1 → localhost:8080
+Container 2 → localhost:9090
+```
+
+---
+
+## 3. Containers Inside a Pod
+
+Containers in the same Pod share:
+
+* Network namespace
+* Pod IP
+* `localhost`
+* Volumes when configured
+
+They **do not share their root filesystem automatically**.
+
+---
+
+## 4. Why Multiple Containers in One Pod?
+
+Multiple containers are used when containers have a **tightly coupled relationship**.
+
+Common example:
+
+```text
+Pod
+├── Application Container
+└── Sidecar Container
+```
+
+Example:
+
+```text
+Application
+    ↓
+writes logs
+    ↓
+Sidecar
+    ↓
+ships logs
+```
+
+Other examples:
+
+* Log collector sidecar
+* Proxy sidecar
+* Monitoring agent
+* Configuration synchronization container
+
+---
+
+# 5. Pod Lifecycle
+
+Basic lifecycle:
+
+```text
+Pending
+   ↓
+Running
+   ↓
+Succeeded / Failed
+```
+
+### Pending
+
+* Pod has been accepted by the cluster.
+* It may be waiting for:
+
+  * Scheduling
+  * Image pull
+  * Container setup
+
+### Running
+
+* Pod has been scheduled.
+* Containers are running or starting.
+
+### Succeeded
+
+* All containers completed successfully.
+
+### Failed
+
+* Containers completed but at least one failed.
+
+---
+
+# 6. Pod Creation Flow
+
+```text
+kubectl
+   ↓
+API Server
+   ↓
+etcd
+   ↓
+Scheduler
+   ↓
+Worker Node
+   ↓
+kubelet
+   ↓
+Container Runtime
+   ↓
+Pod
+   ↓
+Container
+```
+
+---
+
+# 7. Pod YAML
+
+Basic Pod:
 
 ```yaml
 apiVersion: v1
 kind: Pod
 metadata:
-  name: payment-pod
-  namespace: cmg-payments
-  labels:
-    app: payment-service     # ✅ semantic app label
-    tier: backend            # ✅ not tier: "1"
-    env: prod                # ✅ not env: "red"
-  annotations:
-    prometheus.io/scrape: "true"
-    prometheus.io/port: "8080"
+  name: nginx-pod
 spec:
-  automountServiceAccountToken: false   # ✅ spec level, NOT metadata
-  securityContext:                      # ✅ Pod-level securityContext
-    runAsNonRoot: true
-    runAsUser: 1000
-    runAsGroup: 1000
-    fsGroup: 1000                       # ✅ fsGroup ONLY at pod level
-  initContainers:
-  - name: wait-for-db
-    image: busybox:1.35                 # ✅ pinned version
-    command: ['sh', '-c', 'until nc -z oracle-db 1521; do sleep 2; done']
   containers:
-  - name: payment-service
-    image: 123456789.dkr.ecr.eu-west-2.amazonaws.com/payment:v1.2.0  # ✅ pinned
-    imagePullPolicy: IfNotPresent
-    ports:
-    - name: http                        # ✅ named correctly (http not metrics)
-      containerPort: 8080
-    - name: metrics                     # ✅ named correctly
-      containerPort: 9090
-    resources:
-      requests: {memory: "256Mi", cpu: "250m"}
-      limits:   {memory: "512Mi", cpu: "500m"}
-    securityContext:                    # ✅ Container-level securityContext
-      allowPrivilegeEscalation: false
-      readOnlyRootFilesystem: true
-      capabilities:
-        drop: ["ALL"]                   # ✅ Drop all capabilities
-      seccompProfile:
-        type: RuntimeDefault            # ✅ Required for PSS Restricted
-    volumeMounts:
-    - name: tmp                         # ✅ writable scratch for readOnlyRootFilesystem
-      mountPath: /tmp
-    - name: nginx-cache
-      mountPath: /var/cache/nginx
-    - name: nginx-run
-      mountPath: /var/run
-    lifecycle:
-      preStop:
-        exec:
-          command: ["/bin/sh", "-c", "sleep 10"]
-    livenessProbe:
-      httpGet: {path: /actuator/health/liveness, port: 8080}
-      initialDelaySeconds: 30
-      periodSeconds: 10
-      failureThreshold: 3
-    readinessProbe:
-      httpGet: {path: /actuator/health/readiness, port: 8080}
-      initialDelaySeconds: 15
-      periodSeconds: 5
-      failureThreshold: 3
-  volumes:
-  - name: tmp
-    emptyDir: {}                        # ✅ emptyDir for writable paths
-  - name: nginx-cache
-    emptyDir: {}
-  - name: nginx-run
-    emptyDir: {}
-  terminationGracePeriodSeconds: 60
+    - name: nginx
+      image: nginx:latest
+      ports:
+        - containerPort: 80
 ```
 
-### Pod Error States — Quick Fix Guide
+Important fields:
 
-| Error | Exit Code | Cause | First Fix |
-|---|---|---|---|
-| ImagePullBackOff | — | Wrong image/tag or no ECR creds | Fix image; check IAM/imagePullSecret |
-| CrashLoopBackOff | 1/137 | App crashes repeatedly | `kubectl logs --previous` |
-| OOMKilled | 137 | Memory limit exceeded (SIGKILL) | Increase `limits.memory` |
-| Pending | — | No node fits or PVC not bound | `kubectl describe pod` → Events |
-| CreateContainerConfigError | — | Missing ConfigMap/Secret | `kubectl get cm,secret -n ns` |
-| RunContainerError | 126/127 | Wrong command / permission denied | Fix ENTRYPOINT in Dockerfile |
-
-### Graceful Termination Flow
-
-```
-kubectl delete pod →
-  1. Pod removed from Service Endpoints immediately (no new traffic)
-  2. preStop hook runs (e.g. sleep 10 — LB drains connections)
-  3. SIGTERM sent to container PID 1
-  4. terminationGracePeriodSeconds countdown (default 30s, CMG uses 60s)
-  5. SIGKILL if not done (force kill)
-```
-
-### Troubleshooting Commands
-
-```bash
-kubectl get pods -n cmg-payments -o wide --show-labels
-kubectl describe pod payment-abc123 -n cmg-payments    # Events section = key diagnostic
-kubectl logs payment-abc123 --previous -n cmg-payments  # CRITICAL: previous container
-kubectl exec -it payment-abc123 -- /bin/bash
-kubectl top pod --containers -n cmg-payments
-kubectl get events -n cmg-payments --sort-by='.lastTimestamp'
-
-# Debug container exit code
-# 0   = success
-# 1   = application error
-# 126 = permission denied on startup script
-# 127 = command not found (wrong ENTRYPOINT)
-# 137 = SIGKILL — OOMKilled or admin force kill
-# 143 = SIGTERM — graceful shutdown (normal termination)
-
-# Override command to investigate crash
-# Set command: ["sleep", "3600"] → exec in → run startup manually
+```text
+apiVersion
+kind
+metadata
+spec
 ```
 
 ---
+
+# 8. Important Pod Commands
+
+### Create
+
+```bash
+kubectl apply -f pod.yaml
+```
+
+### List Pods
+
+```bash
+kubectl get pods
+```
+
+### Detailed information
+
+```bash
+kubectl describe pod nginx-pod
+```
+
+### Pod logs
+
+```bash
+kubectl logs nginx-pod
+```
+
+### Execute command
+
+```bash
+kubectl exec -it nginx-pod -- /bin/bash
+```
+
+### Delete
+
+```bash
+kubectl delete pod nginx-pod
+```
+
+---
+
+# 9. Pod Restart Policy
+
+Pod supports:
+
+```yaml
+restartPolicy: Always
+```
+
+Options:
+
+* `Always`
+* `OnFailure`
+* `Never`
+
+Default:
+
+```text
+Always
+```
+
+For normal long-running application workloads, Pods are usually managed by higher-level controllers such as **Deployments**, rather than created directly.
+
+---
+
+# 10. Pod vs Container
+
+| Pod                                           | Container                            |
+| --------------------------------------------- | ------------------------------------ |
+| Kubernetes deployment unit                    | Application runtime unit             |
+| Can contain one or more containers            | Runs application/process             |
+| Gets Pod IP                                   | Shares Pod network                   |
+| Managed by Kubernetes                         | Managed through container runtime    |
+| Can share volumes with containers in same Pod | Has its own filesystem unless shared |
+
+---
+
+# 11. Pod vs Deployment
+
+This is a very important interview question.
+
+### Pod
+
+```text
+Pod
+ ↓
+Container
+```
+
+### Deployment
+
+```text
+Deployment
+    ↓
+ReplicaSet
+    ↓
+Pods
+    ↓
+Containers
+```
+
+Deployment provides:
+
+* Replica management
+* Rolling updates
+* Rollbacks
+* Self-healing through ReplicaSet
+* Desired replica count
+
+### Interview point
+
+> **For production applications, we normally create a Deployment rather than managing individual Pods manually.**
+
+---
+
+# 12. Pod Self-Healing
+
+Suppose:
+
+```text
+Deployment
+replicas = 3
+```
+
+Current:
+
+```text
+Pod 1
+Pod 2
+Pod 3
+```
+
+If Pod 2 is deleted:
+
+```text
+Pod 1
+Pod 3
+```
+
+ReplicaSet detects:
+
+```text
+Desired = 3
+Current = 2
+```
+
+It creates another Pod:
+
+```text
+Pod 1
+Pod 3
+Pod 4
+```
+
+So remember:
+
+```text
+Deployment
+    ↓
+ReplicaSet
+    ↓
+maintains desired number of Pods
+```
+
+---
+
+# 13. Pod Networking
+
+Each Pod normally gets its own unique IP within the cluster network.
+
+Example:
+
+```text
+Node 1
+├── Pod A → 10.244.1.10
+└── Pod B → 10.244.1.11
+
+Node 2
+└── Pod C → 10.244.2.10
+```
+
+Pod-to-Pod communication is provided by the cluster's **CNI/networking implementation**.
+
+Examples of CNI implementations include:
+
+* Cilium
+* Calico
+* Amazon VPC CNI
+
+---
+
+# 14. Pod Storage
+
+Containers inside a Pod can share a volume.
+
+```text
+Pod
+├── App Container
+│       ↓
+│     Volume
+│       ↑
+└── Sidecar Container
+```
+
+Example:
+
+```yaml
+volumes:
+  - name: shared-data
+    emptyDir: {}
+```
+
+Both containers can mount the same volume.
+
+---
+
+# 15. Init Containers
+
+A Pod can have **init containers**.
+
+They run **before the application containers**.
+
+```text
+Pod
+│
+├── Init Container
+│       ↓
+│   completes
+│
+└── Application Container
+```
+
+Common uses:
+
+* Initialize configuration
+* Wait for dependency
+* Prepare files
+* Run setup tasks
+
+---
+
+# 16. Sidecar Container
+
+A sidecar runs alongside the main application container.
+
+```text
+Pod
+├── Main Application
+└── Sidecar
+```
+
+Both are part of the **same Pod**.
+
+They share the Pod's network namespace and can share volumes when configured.
+
+---
+
+# 17. Key Interview Questions
+
+### Q1. What is a Pod?
+
+> A Pod is the smallest deployable unit in Kubernetes and represents one or more containers that share networking and storage resources.
+
+### Q2. Can a Pod have multiple containers?
+
+> Yes. Multiple containers can run in the same Pod when they need to be tightly coupled, such as an application container with a sidecar.
+
+### Q3. Do containers in the same Pod have different IPs?
+
+> No. Containers in the same Pod share the Pod's network namespace and IP address.
+
+### Q4. Who assigns a Pod to a node?
+
+> **kube-scheduler** selects the appropriate node.
+
+### Q5. Who starts the containers?
+
+> **kubelet** instructs the container runtime on the selected node to create and run the containers.
+
+### Q6. What happens if a Pod dies?
+
+> If the Pod is managed by a controller such as a Deployment/ReplicaSet, the controller detects the difference between desired and actual state and creates a replacement Pod.
+
+### Q7. Why don't we normally create Pods directly in production?
+
+> Because a standalone Pod doesn't provide higher-level workload management such as replica management, rolling updates, and rollbacks. Deployments are normally used for stateless applications.
+
+---
+
+# 18. Quick Reference Charts
+
+## 18.1 Restart Policy
+
+Set at Pod level: `spec.restartPolicy`. It applies to **all containers** in the Pod and is handled by the **kubelet** on the same node.
+
+| Policy      | Restarts container when… | Typical use                         |
+| ----------- | ------------------------ | ----------------------------------- |
+| `Always`    | Container exits for any reason (success or failure) | Long-running apps (web servers, APIs) — **default** |
+| `OnFailure` | Container exits with a non-zero exit code | Jobs that should retry on failure |
+| `Never`     | Never restarts           | One-time tasks, debugging           |
+
+```yaml
+spec:
+  restartPolicy: OnFailure
+```
+
+> **Remember:** Deployments only allow `Always`. `OnFailure` / `Never` are used with Jobs or standalone Pods.
+
+---
+
+## 18.2 Image Pull Policy
+
+Set per container: `spec.containers[].imagePullPolicy`.
+
+| Policy         | Behavior                                              | Typical use                         |
+| -------------- | ----------------------------------------------------- | ----------------------------------- |
+| `IfNotPresent` | Pulls the image only if it is not already on the node | Versioned tags (e.g. `nginx:1.27`)  |
+| `Always`       | Checks the registry every time the container starts (uses the local cache if the digest is unchanged) | `:latest` or mutable tags |
+| `Never`        | Never pulls; uses only the local image — fails if missing | Pre-loaded images, local clusters |
+
+**Default behavior:**
+
+| Image tag                      | Default policy |
+| ------------------------------ | -------------- |
+| No tag or `:latest`            | `Always`       |
+| Specific tag (e.g. `:1.27`)    | `IfNotPresent` |
+| Digest (e.g. `@sha256:...`)    | `IfNotPresent` |
+
+```yaml
+containers:
+  - name: nginx
+    image: nginx:1.27
+    imagePullPolicy: IfNotPresent
+```
+
+> **Best practice:** Use specific version tags (avoid `:latest`) in production.
+
+---
+
+## 18.3 Pod Phase (Lifecycle Status)
+
+The official `status.phase` of a Pod.
+
+| Phase       | Meaning                                                          |
+| ----------- | ---------------------------------------------------------------- |
+| `Pending`   | Accepted by the cluster, but containers are not running yet (waiting for scheduling, image pull, etc.) |
+| `Running`   | Bound to a node and at least one container is running, starting, or restarting |
+| `Succeeded` | All containers terminated successfully and will not be restarted |
+| `Failed`    | All containers terminated and at least one ended in failure      |
+| `Unknown`   | Pod state cannot be determined (usually a node communication problem) |
+
+---
+
+## 18.4 Common Pod Status Values in `kubectl get pods`
+
+These appear in the `STATUS` column. They are **not all official phases** — many are container states or reasons.
+
+| Status                       | Meaning                                              | Common cause / first check                         |
+| ---------------------------- | ---------------------------------------------------- | -------------------------------------------------- |
+| `Pending`                    | Not scheduled or not started yet                     | Insufficient resources, taints, PVC not bound — `kubectl describe pod` |
+| `ContainerCreating`          | Node is setting up the container                     | Image pull in progress, volume mount, CNI setup    |
+| `Running`                    | Pod is running                                       | Normal state                                       |
+| `Completed`                  | Container finished successfully (exit code 0)        | Normal for Jobs                                    |
+| `Error`                      | Container exited with an error                       | Check `kubectl logs`                               |
+| `CrashLoopBackOff`           | Container keeps crashing and restarting with back-off delay | App error, bad config, failing probe — `kubectl logs --previous` |
+| `ErrImagePull`               | Image pull failed                                    | Wrong image name/tag, registry auth, network       |
+| `ImagePullBackOff`           | Kubernetes is backing off from retrying image pull   | Same as `ErrImagePull` — check image and `imagePullSecrets` |
+| `CreateContainerConfigError` | Container config is invalid                          | Missing ConfigMap or Secret                        |
+| `OOMKilled`                  | Container was killed for exceeding its memory limit  | Increase memory limit or fix memory usage          |
+| `Terminating`                | Pod is being deleted                                 | Stuck? Check finalizers or node issues             |
+| `Evicted`                    | Pod was removed from the node                        | Node pressure (memory, disk)                       |
+
+> **Note:** `OOMKilled` appears as the container's termination *reason* (visible in `kubectl describe pod`), and may show in `STATUS` alongside `CrashLoopBackOff`.
+
+---
+
+## 18.5 Troubleshooting Flow
+
+```text
+Pod not working?
+      ↓
+kubectl get pods            → check STATUS
+      ↓
+kubectl describe pod <name> → check Events section
+      ↓
+kubectl logs <name>         → check application logs
+      ↓
+kubectl logs <name> --previous → logs from the crashed container
+```
+
+### 1-line interview answer
+
+> **Restart policy decides whether the kubelet restarts a container after it exits, image pull policy decides when the image is pulled from the registry, and Pod phase/status tells us where the Pod is in its lifecycle — `kubectl describe pod` is the first tool for diagnosing any of them.**
+
+---
+
+# 19. Secure Pod
+
+A **secure Pod** means configuring the Pod so that a compromised container has limited ability to damage the application, node, or cluster.
+
+## 19.1 Use `securityContext`
+
+The main Kubernetes mechanism for Pod/container security is:
+
+```yaml
+securityContext:
+```
+
+It can be configured at:
+
+* Pod level
+* Container level
+
+---
+
+## 19.2 Run as Non-Root
+
+Avoid running applications as `root`.
+
+```yaml
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+```
+
+Meaning:
+
+```text
+Container
+   ↓
+runs as UID 1000
+   ↓
+NOT root
+```
+
+### Interview point
+
+> I prefer running application containers as a non-root user to reduce the impact of container compromise.
+
+---
+
+## 19.3 Disable Privilege Escalation
+
+```yaml
+securityContext:
+  allowPrivilegeEscalation: false
+```
+
+Prevents a process from gaining more privileges than its parent process.
+
+---
+
+## 19.4 Drop Linux Capabilities
+
+Linux capabilities provide specific privileged operations.
+
+Instead of giving unnecessary capabilities:
+
+```yaml
+securityContext:
+  capabilities:
+    drop:
+      - ALL
+```
+
+If a specific capability is genuinely required, add only that capability.
+
+```yaml
+capabilities:
+  drop:
+    - ALL
+  add:
+    - NET_BIND_SERVICE
+```
+
+### Principle
+
+> **Least privilege**
+
+---
+
+## 19.5 Read-Only Root Filesystem
+
+```yaml
+securityContext:
+  readOnlyRootFilesystem: true
+```
+
+The container's root filesystem becomes read-only.
+
+If the application needs temporary writable space:
+
+```yaml
+volumes:
+  - name: tmp
+    emptyDir: {}
+```
+
+Then mount it:
+
+```yaml
+volumeMounts:
+  - name: tmp
+    mountPath: /tmp
+```
+
+---
+
+## 19.6 seccomp
+
+Use a seccomp profile to restrict system calls available to the container.
+
+Example:
+
+```yaml
+securityContext:
+  seccompProfile:
+    type: RuntimeDefault
+```
+
+### Remember
+
+> **seccomp = restricts Linux system calls**
+
+---
+
+## 19.7 AppArmor
+
+On supported Linux environments, AppArmor can restrict what the application can access/do.
+
+Conceptually:
+
+```text
+Container
+   ↓
+AppArmor profile
+   ↓
+Allowed operations only
+```
+
+---
+
+## 19.8 Avoid Privileged Containers
+
+Avoid:
+
+```yaml
+securityContext:
+  privileged: true
+```
+
+A privileged container gets extensive access to the host.
+
+Prefer:
+
+```yaml
+securityContext:
+  privileged: false
+```
+
+or simply don't enable privileged mode unless there is a documented requirement.
+
+---
+
+## 19.9 Resource Limits
+
+Set CPU and memory requests/limits.
+
+```yaml
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "512Mi"
+```
+
+This helps prevent one workload from consuming excessive node resources.
+
+---
+
+## 19.10 NetworkPolicy
+
+Use `NetworkPolicy` to control which Pods can communicate.
+
+Example concept:
+
+```text
+Frontend
+   |
+   | allowed
+   ↓
+Backend
+   |
+   | allowed
+   ↓
+Database
+
+Frontend ─X─→ Database
+```
+
+This follows the principle:
+
+> **Only allow required network communication.**
+
+---
+
+## 19.11 Secure Secrets
+
+Don't hardcode passwords in the image or YAML.
+
+Avoid:
+
+```yaml
+env:
+  - name: DB_PASSWORD
+    value: "mypassword"
+```
+
+Prefer Kubernetes Secrets or an external secrets solution.
+
+```text
+Application
+     ↓
+Secret
+     ↓
+Database password
+```
+
+Also restrict access to Secrets using **RBAC**.
+
+---
+
+## 19.12 RBAC
+
+Use a dedicated ServiceAccount with only the permissions the application needs.
+
+Avoid giving:
+
+```text
+cluster-admin
+```
+
+unless absolutely required.
+
+Think:
+
+```text
+Application
+    ↓
+ServiceAccount
+    ↓
+Role / RoleBinding
+    ↓
+Only required permissions
+```
+
+---
+
+## 19.13 Automount ServiceAccount Token
+
+If the application doesn't need Kubernetes API access:
+
+```yaml
+automountServiceAccountToken: false
+```
+
+This reduces unnecessary credentials being available inside the Pod.
+
+---
+
+## 19.14 Pod Security Standards
+
+Kubernetes provides **Pod Security Standards (PSS)** with levels:
+
+```text
+Privileged
+Baseline
+Restricted
+```
+
+For security-sensitive workloads, the **Restricted** profile applies stronger security requirements.
+
+These can be enforced using **Pod Security Admission (PSA)**.
+
+---
+
+## 19.15 Secure Pod Example
+
+```yaml
+apiVersion: v1
+kind: Pod
+metadata:
+  name: secure-nginx
+spec:
+  automountServiceAccountToken: false
+
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    seccompProfile:
+      type: RuntimeDefault
+
+  containers:
+    - name: nginx
+      image: nginx:latest
+
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+
+      resources:
+        requests:
+          cpu: "100m"
+          memory: "128Mi"
+        limits:
+          cpu: "500m"
+          memory: "512Mi"
+```
+
+**Note:** A specific image must actually support running as UID `1000` and a read-only root filesystem; otherwise this example may need image-specific adjustments.
+
+---
+
+## 19.16 Security Layers to Remember
+
+For interviews, remember:
+
+```text
+Secure Pod
+│
+├── Non-root user
+├── Least privilege
+├── Drop capabilities
+├── No privilege escalation
+├── Read-only root filesystem
+├── seccomp
+├── AppArmor/SELinux where applicable
+├── Resource limits
+├── NetworkPolicy
+├── RBAC
+├── Secure Secrets
+├── ServiceAccount restrictions
+└── Pod Security Standards
+```
+
+### Senior Interview Answer
+
+> **To secure a Kubernetes Pod, I apply defense in depth: run the container as a non-root user, disable privilege escalation, drop unnecessary Linux capabilities, use a read-only root filesystem, apply seccomp and AppArmor/SELinux where supported, restrict ServiceAccount permissions with RBAC, disable automatic ServiceAccount token mounting when Kubernetes API access isn't required, apply NetworkPolicies, use resource requests and limits, and enforce appropriate Pod Security Standards.**
 
 ## S03 — REPLICASET
 
