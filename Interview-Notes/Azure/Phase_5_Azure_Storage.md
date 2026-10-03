@@ -817,205 +817,182 @@ subject to the service/configuration behavior.
 
 # 17. Storage Security 🔴🔴
 
-Important security mechanisms:
+Azure Storage can be secured using:
 
-``` text
+```text
                  Azure Storage
                       |
        +--------------+--------------+
        |              |              |
-      RBAC            SAS        Access Keys
+      RBAC            SAS        Access Key
        |              |              |
- Identity-based   Delegated     Account-level
- authorization      access        credentials
-       |
-       +------ Private Endpoint
-       |
-       +------ Encryption
+   Identity        Temporary       Secret
+   + Role           Access          Key
 ```
-# Azure Storage: RBAC vs Shared Access Signature (SAS) vs Access Key
 
-| Method         | Simple meaning                                   | Example                                           |
-| -------------- | ------------------------------------------------ | ------------------------------------------------- |
-| **RBAC**       | Give a user/app a **permission/role**            | "This user can read blobs"                        |
-| **SAS**        | Give **temporary limited access** using a token  | "This person can download this file for 1 hour"   |
-| **Access Key** | Give the **storage account's master secret key** | "This application can access the storage account" |
-
-## 🧠 Easy memory
+### 🧠 Easy Memory
 
 ```text
 RBAC       = Who can access?
-SAS        = What + How long can they access?
-Access Key = Secret key for access
+SAS        = What + How long?
+Access Key = Secret key
 ```
 
-## Example
+---
+
+# 18. Access Keys 🔴
+
+Storage Account has **2 keys**:
 
 ```text
 Storage Account
       |
-      +-- RBAC → User/App → Permission
-      |
-      +-- SAS → Temporary access
-      |
-      +-- Access Key → Secret credential
+   +--+--+
+   |     |
+ Key1   Key2
 ```
 
-## Interview point
+### Why 2 keys?
 
-👉 **RBAC is generally preferred for Azure resource access because it uses identity and roles instead of sharing storage account keys.**
-------------------------------------------------------------------------
+For **key rotation** without downtime.
 
-# 18. Access Keys 🔴
-
-Storage accounts have access keys that can authenticate requests to the
-storage account.
-
-Typically there are two keys:
-
-``` text
-Storage Account
- |
- +-- Key1
- |
- +-- Key2
-```
-
-### Why two keys?
-
-They support key rotation.
-
-Example:
-
-``` text
+```text
 Application → Key1
 
-Generate/prepare Key2
-       ↓
-Update application
-       ↓
+Prepare Key2
+    ↓
+Update application to Key2
+    ↓
 Test
-       ↓
+    ↓
 Regenerate Key1
 ```
 
-### Security concern
+### Security
 
-Access keys can provide broad access depending on how they are used.
+Access keys can provide **broad access** to the storage account.
 
-Therefore:
+❌ Don't hard-code them in application code.
 
-> Prefer identity-based access such as Microsoft Entra ID + RBAC when
-> possible.
+✅ Prefer:
 
-### Interview Question
+```text
+Managed Identity
+      ↓
+   Entra ID
+      ↓
+     RBAC
+      ↓
+   Storage
+```
 
-**Q: Should you store a storage account key directly in application
-code?**
+If a secret is required, store it securely in **Azure Key Vault**.
 
-**Answer:**
+### Interview answer
 
-> No. Avoid hard-coding storage keys. Prefer managed identity with Entra
-> ID and RBAC. If a secret is unavoidable, store it securely in a
-> service such as Key Vault.
+> **Storage account keys are secret credentials that provide access to the storage account. There are two keys to support safe key rotation.**
 
-------------------------------------------------------------------------
+---
 
-# 19. SAS --- Shared Access Signature 🔴
+# 19. SAS — Shared Access Signature 🔴
 
-SAS provides **delegated and time-limited access** to storage resources.
+**SAS = Temporary and limited access to storage.**
 
 Example:
 
-``` text
-Application
-    |
-    | SAS
-    v
-Blob
-```
-
-SAS can restrict things such as:
-
--   Resource
--   Permissions
--   Start time
--   Expiry time
--   Protocol
--   IP/network restrictions
-
-### Example
-
-You want a user to download one file for 30 minutes.
-
-Instead of giving the user the storage account key:
-
-``` text
+```text
 User
- |
- | Temporary SAS
- | Read-only
- | Expires in 30 min
- v
+  |
+  | SAS token
+  | Read only
+  | 30 minutes
+  ↓
 Blob
 ```
 
-### Memory
+You can control:
 
-> **SAS = temporary/delegated access**
+* **What** resource can be accessed
+* **What permission** → Read/Write/Delete
+* **How long** → Expiry time
+* **Where/from which IP** → optional restrictions
+* **Protocol** → HTTP/HTTPS restrictions
 
-------------------------------------------------------------------------
+### Simple example
 
-# 20. RBAC --- Role-Based Access Control 🔴🔴
+User needs to download a file for 30 minutes.
 
-RBAC provides identity-based authorization.
+Instead of giving the **Access Key**:
 
-``` text
-User / VM / Application
-          |
-          v
-     Entra ID Identity
-          |
-          v
-         RBAC
-          |
-          v
-      Azure Storage
+```text
+User → Temporary SAS → Blob
 ```
 
-Examples of data roles include:
+### 🧠 Remember
 
--   Storage Blob Data Reader
--   Storage Blob Data Contributor
--   Storage Blob Data Owner
+> **SAS = Temporary delegated access**
+
+---
+
+# 20. RBAC — Role-Based Access Control 🔴🔴
+
+RBAC means giving an **identity a specific role/permission**.
+
+```text
+User / VM / Application
+          ↓
+       Entra ID
+          ↓
+         RBAC
+          ↓
+       Storage
+```
+
+Examples:
+
+* **Storage Blob Data Reader** → Read blobs
+* **Storage Blob Data Contributor** → Read/write/delete blobs
+* **Storage Blob Data Owner** → Full data access within the role scope
+
+### Simple example
+
+```text
+Application
+     ↓
+Managed Identity
+     ↓
+RBAC
+     ↓
+Blob Storage
+```
+
+👉 No storage key needs to be stored in the application.
 
 ### Principle
 
-Give the identity only the permissions it needs.
+**Least privilege** = Give only the permissions required.
 
-This is the **least privilege** principle.
-
-------------------------------------------------------------------------
+---
 
 # 21. Access Key vs SAS vs RBAC 🔴
 
-  Method       Concept                        Typical use
-  ------------ ------------------------------ -------------------------------
-  Access Key   Storage account credential     Application/account access
-  SAS          Delegated temporary access     Temporary file access
-  RBAC         Identity-based authorization   Production application access
+| Method         | Simple meaning             | Example                    |
+| -------------- | -------------------------- | -------------------------- |
+| **Access Key** | Secret account credential  | Application access         |
+| **SAS**        | Temporary limited access   | Download file for 30 min   |
+| **RBAC**       | Identity + permission/role | Application can read blobs |
 
-### Easy Memory
+### 🧠 Final Memory
 
-``` text
-Access Key = Account credential
-SAS        = Temporary delegated access
-RBAC       = Identity + role
+```text
+Access Key = Secret
+SAS        = Temporary access
+RBAC       = Identity + Role
 ```
 
-### Preferred production pattern
+### ⭐ Production pattern to remember
 
-``` text
+```text
 Managed Identity
        ↓
     Entra ID
@@ -1025,7 +1002,9 @@ Managed Identity
     Storage
 ```
 
-------------------------------------------------------------------------
+**Interview answer:**
+
+> **For applications running in Azure, I prefer Managed Identity with Microsoft Entra ID and RBAC because it avoids storing storage account keys in the application and supports least-privilege access.**-
 
 # 22. Private Endpoint 🔴🔴
 
