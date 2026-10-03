@@ -317,9 +317,31 @@ Disk  = VM's Disk
 
 # 7. Queue Storage 🟡
 
-Azure Queue Storage provides **message-based asynchronous
-communication**.
+Azure Queue Storage provides **message-based asynchronous communication**.
 
+## What does asynchronous mean?
+
+Asynchronous means you don't have to wait for one task to finish before starting another task.
+
+**Synchronous:**
+
+```text
+Task A → Wait → Task B → Wait → Task C
+```
+
+**Asynchronous:**
+
+```text
+Task A → Start
+Task B → Start
+Task C → Start
+```
+
+👉 Easy meaning: Do something without waiting for the previous task to finish.
+
+**Example in Azure:**
+
+An async operation may start a large file copy, and you can continue doing other work while the copy is running.
 ``` text
 Application
      |
