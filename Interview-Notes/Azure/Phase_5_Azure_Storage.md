@@ -649,6 +649,12 @@ Archive = long-term archival
 Replication protects data against hardware, zone or regional failures
 depending on the selected redundancy option.
 
+## What does "Redundant" mean?
+
+**Redundant** means having **additional copies** so data is not lost if something fails.
+
+👉 Think: **Backup copies of your data.**
+
 Main options:
 
 -   LRS
