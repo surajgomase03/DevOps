@@ -264,25 +264,54 @@ Azure Files lets you access files using different communication methods (protoco
 > Azure Files supports **SMB for Windows-based file sharing** and **NFS for Linux/Unix-based file sharing**, depending on the storage account and share configuration.
 ------------------------------------------------------------------------
 
-# 6. Blob Storage vs Azure Files 🔴
+# Blob Storage vs Azure Files — Very Simple
 
-  Feature                  Blob Storage      Azure Files
-  ------------------------ ----------------- --------------------
-  Storage type             Object            Managed file share
-  Access model             Objects/blobs     Files/directories
-  Common protocol          REST/SDK          SMB/NFS
-  Images/videos            Excellent         Possible
-  Shared filesystem        Not primary use   Yes
-  Backups                  Excellent         Possible
-  Legacy file-share apps   Not ideal         Excellent
+| Feature                                | **Blob Storage**                   | **Azure Files**         |
+| -------------------------------------- | ---------------------------------- | ----------------------- |
+| What is it?                            | **Object storage**                 | **Shared file storage** |
+| Stores                                 | Images, videos, documents, backups | Files and folders       |
+| Access                                 | REST API / SDK                     | SMB / NFS               |
+| Shared folder                          | ❌ Not its main purpose             | ✅ Yes                   |
+| Windows file share                     | ❌                                  | ✅                       |
+| Linux file share                       | ❌                                  | ✅                       |
+| Backup/storage                         | ✅ Excellent                        | ✅ Possible              |
+| Legacy applications needing file share | ❌ Not ideal                        | ✅ Good                  |
 
-### Easy Memory
+## Easy examples
 
-``` text
+**Blob Storage:**
+
+```text
+Photo
+Video
+Backup
+Log file
+```
+
+👉 Store **objects/data**
+
+**Azure Files:**
+
+```text
+Shared Folder
+   ├── file1.txt
+   ├── report.pdf
+   └── image.jpg
+```
+
+👉 Store **files in folders** and share them between servers.
+
+## 🧠 Remember
+
+```text
 Blob  = Object
 Files = File Share
-Disk  = Block Storage
+Disk  = VM's Disk
 ```
+
+## Interview one-liner
+
+> **Blob Storage is mainly for storing objects like images and backups, while Azure Files provides a shared file system that applications and servers can access using SMB or NFS.**
 
 ------------------------------------------------------------------------
 
