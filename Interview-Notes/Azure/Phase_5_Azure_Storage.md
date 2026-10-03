@@ -833,7 +833,37 @@ Important security mechanisms:
        |
        +------ Encryption
 ```
+# Azure Storage: RBAC vs Shared Access Signature (SAS) vs Access Key
 
+| Method         | Simple meaning                                   | Example                                           |
+| -------------- | ------------------------------------------------ | ------------------------------------------------- |
+| **RBAC**       | Give a user/app a **permission/role**            | "This user can read blobs"                        |
+| **SAS**        | Give **temporary limited access** using a token  | "This person can download this file for 1 hour"   |
+| **Access Key** | Give the **storage account's master secret key** | "This application can access the storage account" |
+
+## 🧠 Easy memory
+
+```text
+RBAC       = Who can access?
+SAS        = What + How long can they access?
+Access Key = Secret key for access
+```
+
+## Example
+
+```text
+Storage Account
+      |
+      +-- RBAC → User/App → Permission
+      |
+      +-- SAS → Temporary access
+      |
+      +-- Access Key → Secret credential
+```
+
+## Interview point
+
+👉 **RBAC is generally preferred for Azure resource access because it uses identity and roles instead of sharing storage account keys.**
 ------------------------------------------------------------------------
 
 # 18. Access Keys 🔴
