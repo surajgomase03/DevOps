@@ -700,25 +700,204 @@ git commit -m "Resolve merge conflict"
 
 ## 5.4 `git rebase`
 
-Replays your commits on top of another base.
+# `git rebase` — Simple + Deep 🔴
+
+`git rebase` = Move your branch on top of the latest changes from another branch.
+
+👉 **Simple meaning:** Rebase makes your branch look like it started from the latest version of the target branch.
+
+---
+
+## Simple Example
+
+Suppose:
 
 ```text
-Before:                        After:
-main  A ── B ── C              main  A ── B ── C
-       \                                        \
-        D ── E  feature                          D' ── E'
+main:    A---B---C
+              \
+feature:       D---E
 ```
+
+While you were working, `main` got new commits:
+
+```text
+main:    A---B---C---F---G
+              \
+feature:       D---E
+```
+
+Now you run:
 
 ```bash
-git switch feature/payment
-git fetch origin
-git rebase origin/main
-git rebase --continue     # after resolving conflicts
-git rebase --abort        # cancel
-git rebase -i HEAD~3      # interactively squash/reword/reorder last 3 commits
+git checkout feature
+git rebase main
 ```
 
-> `D'` and `E'` are **new commits** (new IDs). Rebase **rewrites history**.
+Git takes your commits `D` and `E` and puts them after the latest `main` commits:
+
+```text
+main:     A---B---C---F---G
+                              \
+feature:                       D'---E'
+```
+
+`D'` and `E'` are technically new commits.
+
+---
+
+## Why use rebase?
+
+### 1. Get latest changes
+
+```bash
+git rebase main
+```
+
+Your feature branch gets the latest `main` changes.
+
+### 2. Cleaner history
+
+Before:
+
+```text
+A---B---C---F---G
+     \
+      D---E
+```
+
+After:
+
+```text
+A---B---C---F---G---D'---E'
+```
+
+👉 History becomes more linear.
+
+---
+
+## Rebase vs Merge
+
+### Merge
+
+```text
+main:     A---B---C---F---G
+               \         /
+feature:        D---E----
+```
+
+Creates a merge commit.
+
+### Rebase
+
+```text
+main:     A---B---C---F---G---D'---E'
+```
+
+No merge commit is required.
+
+### Easy memory
+
+```text
+Merge  = Combine histories
+Rebase = Move my commits on top
+```
+
+---
+
+## Important ⚠️
+
+Rebase **changes commit history**.
+
+Because commits are recreated:
+
+```text
+D → D'
+E → E'
+```
+
+Therefore, avoid rebasing commits that other developers are already using/shared, unless your team's workflow explicitly allows it.
+
+### Common safe situation
+
+Your own local feature branch:
+
+```text
+feature/login
+```
+
+You haven't pushed/shared it yet. You can generally rebase it safely.
+
+---
+
+## If there is a conflict
+
+During rebase:
+
+```bash
+git rebase main
+```
+
+You may get:
+
+```text
+CONFLICT
+```
+
+Then:
+
+```bash
+# Fix the file
+
+git add <file>
+
+git rebase --continue
+```
+
+If you want to cancel:
+
+```bash
+git rebase --abort
+```
+
+---
+
+## Useful Commands
+
+### Rebase feature onto main
+
+```bash
+git checkout feature
+git rebase main
+```
+
+### Continue after conflict
+
+```bash
+git add .
+git rebase --continue
+```
+
+### Cancel rebase
+
+```bash
+git rebase --abort
+```
+
+---
+
+## 🎯 Interview Answer
+
+> **Git rebase moves or reapplies my branch commits on top of the latest commit of another branch. It creates a cleaner, linear history, but because it rewrites commit history, I avoid rebasing shared or public branches.**
+
+## 🧠 Remember
+
+```text
+MERGE
+= Join branches
+
+REBASE
+= Move my commits on top
+```
 
 ## 5.5 Merge vs Rebase
 
