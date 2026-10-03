@@ -228,6 +228,40 @@ protocols such as:
 -   SMB
 -   NFS
 
+# Azure Files: SMB vs NFS
+
+Azure Files lets you access files using different communication methods (protocols).
+
+## 1. SMB
+
+**SMB = Server Message Block**
+
+- Commonly used with **Windows**
+- Used for sharing files over a network
+- Example: `\\server\shared-folder`
+
+👉 Think: **Windows file sharing**
+
+## 2. NFS
+
+**NFS = Network File System**
+
+- Commonly used with **Linux/Unix**
+- Allows Linux servers to access shared files over a network
+- Example: `/mnt/shared`
+
+👉 Think: **Linux file sharing**
+
+## Easy way to remember
+
+| Protocol | Mainly used with | Think                |
+| -------- | ---------------- | -------------------- |
+| **SMB**  | Windows          | Windows file sharing |
+| **NFS**  | Linux/Unix       | Linux file sharing   |
+
+## Interview answer
+
+> Azure Files supports **SMB for Windows-based file sharing** and **NFS for Linux/Unix-based file sharing**, depending on the storage account and share configuration.
 ------------------------------------------------------------------------
 
 # 6. Blob Storage vs Azure Files 🔴
