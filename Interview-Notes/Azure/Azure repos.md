@@ -239,35 +239,370 @@ Developers work independently without modifying `main` directly.
 
 # 4. Branching Strategies
 
-The exact model depends on the organization's process. Know the main ones.
+# Git Flow Branching Strategy — Simple + Deep
 
-## 4.1 Git Flow-style
+**Branching strategy** = A way to organize Git branches so developers can work safely without directly disturbing production.
+
+Think of branches as **separate lanes for development**.
+
+```text
+                 main
+                  ↑
+             release/1.0
+                  ↑
+               develop
+              ↑   ↑   ↑
+             /    |    \
+      feature/login  feature/payment
+```
+
+---
+
+## 1. `main` 🔴
+
+**Main = Production code**
 
 ```text
 main
- │
- ├── develop
- │    ├── feature/login
- │    ├── feature/payment
- │    └── feature/profile
- │
- └── release/1.0
+ ↓
+Production
 ```
 
-| Branch | Purpose |
-| --- | --- |
-| `main` | Stable, production-ready |
-| `develop` | Integration branch for completed features |
-| `feature/*` | One feature/change each |
-| `release/*` | Stabilize a release (testing, bug fixes) |
-| `hotfix/*` | Urgent production fix from `main` |
+* Contains stable code.
+* Code here should be production-ready.
+* Developers normally don't directly develop features here.
+
+👉 **Remember:** `main = Production`
+
+---
+
+## 2. `develop` 🔴
+
+**develop = Integration branch**
+
+Completed features come together here.
 
 ```text
-feature/* → develop → release/* → main → Production
-hotfix/* → main (and back to develop)
+feature/login ──┐
+feature/payment ─┼──→ develop
+feature/profile ─┘
 ```
 
-> `develop`, `release/*` and `hotfix/*` are **conventions**, not Azure Repos requirements.
+* Developers merge completed features here.
+* Testing/integration happens here.
+* It contains upcoming changes that are not yet released to production.
+
+👉 **Remember:** `develop = Upcoming version`
+
+---
+
+## 3. `feature/*` 🔴
+
+Used for developing **one feature or change**.
+
+Example:
+
+```text
+feature/login
+feature/payment
+feature/profile
+```
+
+Usually created from `develop`:
+
+```text
+develop
+   |
+   +---- feature/login
+   |
+   +---- feature/payment
+```
+
+After development:
+
+```text
+feature/login
+      ↓
+Pull Request
+      ↓
+develop
+```
+
+👉 **Remember:** `feature = Developer's work`
+
+---
+
+## 4. `release/*` 🟡
+
+Used when the application is almost ready for production.
+
+Example:
+
+```text
+release/1.0
+release/2.0
+```
+
+Created from:
+
+```text
+develop
+   ↓
+release/1.0
+```
+
+Now the team mainly does:
+
+* Testing
+* Bug fixing
+* Version preparation
+* Final validation
+
+Example:
+
+```text
+develop
+   ↓
+release/1.0
+   ↓
+Testing
+   ↓
+Bug fixes
+   ↓
+Production
+```
+
+👉 **Remember:** `release = Final preparation`
+
+---
+
+## 5. `hotfix/*` 🔴
+
+Used for an **urgent production problem**.
+
+Suppose:
+
+```text
+Production
+   ↓
+main
+```
+
+A critical bug is discovered.
+
+Create:
+
+```text
+hotfix/payment-error
+```
+
+from `main`.
+
+```text
+main
+ |
+ +---- hotfix/payment-error
+              |
+              ↓
+         Fix + Test
+              |
+              ↓
+             main
+```
+
+After fixing, the fix should also be incorporated into the development line so it isn't lost from future releases.
+
+```text
+hotfix
+  ├──→ main
+  │
+  └──→ develop
+```
+
+👉 **Remember:** `hotfix = Urgent production fix`
+
+---
+
+# Complete Git Flow
+
+```text
+                         Production
+                             ↑
+                           main
+                             ↑
+                       release/1.0
+                             ↑
+                          develop
+                       ↑      ↑      ↑
+                      /       |       \
+                     /        |        \
+          feature/login  feature/payment  feature/profile
+```
+
+### Normal development
+
+```text
+feature
+   ↓
+develop
+   ↓
+release
+   ↓
+main
+   ↓
+Production
+```
+
+### Emergency production fix
+
+```text
+main
+ ↓
+hotfix
+ ↓
+main
+ ↓
+Production
+
+hotfix
+ ↓
+develop
+```
+
+---
+
+# Real Example
+
+Suppose you are building an **e-commerce application**.
+
+### Developer 1
+
+Works on login:
+
+```text
+feature/login
+```
+
+### Developer 2
+
+Works on payment:
+
+```text
+feature/payment
+```
+
+Both finish:
+
+```text
+feature/login ──────┐
+                    ├──→ develop
+feature/payment ────┘
+```
+
+The team tests everything.
+
+When ready:
+
+```text
+develop
+   ↓
+release/1.0
+   ↓
+Final testing
+   ↓
+main
+   ↓
+Production
+```
+
+---
+
+# What is a Pull Request?
+
+Usually developers don't directly merge their branch.
+
+```text
+feature/login
+      ↓
+Pull Request
+      ↓
+Code Review
+      ↓
+CI Tests
+      ↓
+Approved
+      ↓
+develop
+```
+
+**Pull Request (PR)** = Request to merge your changes into another branch.
+
+---
+
+# Why use branches?
+
+Without branches:
+
+```text
+Everyone → main → 😵
+```
+
+One developer's unfinished code could affect production.
+
+With branches:
+
+```text
+Developer
+   ↓
+feature branch
+   ↓
+Testing / Review
+   ↓
+develop
+   ↓
+release
+   ↓
+main
+```
+
+👉 **Branches provide isolation and controlled integration.**
+
+---
+
+# Important Interview Point 🔴
+
+These branch names are **not mandatory Git/Azure Repos requirements**.
+
+You can create:
+
+```text
+main
+develop
+feature/*
+release/*
+hotfix/*
+```
+
+or use another strategy.
+
+The organization decides the branching model.
+
+---
+
+# 🧠 Easy Memory
+
+```text
+main       = Production
+develop    = Integration
+feature    = New feature
+release    = Prepare release
+hotfix     = Urgent production fix
+```
+
+### One-line interview answer
+
+> **Git Flow is a branching model where feature branches are integrated into develop, release branches are used for final testing and stabilization, main represents production, and hotfix branches are used for urgent production fixes.**
+
 
 ## 4.2 Trunk-based development
 
