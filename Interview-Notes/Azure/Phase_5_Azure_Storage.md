@@ -1768,3 +1768,213 @@ Monitoring
 > **what data is stored, how it is accessed, how it is replicated, how
 > it is secured, how it is privately connected, and how you troubleshoot
 > it.**
+
+
+# Azure Storage Security 🔴🔴
+
+For Azure Storage, remember these main security controls:
+
+```text
+                  Azure Storage
+                       |
+       +---------------+---------------+
+       |               |               |
+   Public Access      RBAC           Network
+       |               |               |
+    Disable         Entra ID      Private Endpoint
+                                  Firewall
+       |
+      SAS
+       |
+   Temporary Access
+```
+
+---
+
+## 1. Disable Public Access 🔴
+
+If your storage doesn't need public access:
+
+```text
+Public access → Disabled
+```
+
+👉 Prevents anonymous users from accessing storage data.
+
+**Simple:** Don't make storage publicly accessible unless required.
+
+---
+
+## 2. RBAC 🔴🔴
+
+Use Microsoft Entra ID + RBAC to control who can access storage.
+
+```text
+User / VM
+    ↓
+Entra ID
+    ↓
+RBAC Role
+    ↓
+Storage
+```
+
+Examples:
+
+* **Storage Blob Data Reader** → Read
+* **Storage Blob Data Contributor** → Read/Write/Delete
+* **Storage Blob Data Owner** → Full data access
+
+👉 Follow least privilege.
+
+---
+
+## 3. SAS 🔴
+
+**SAS = Shared Access Signature**
+
+Provides temporary and limited access.
+
+Example:
+
+```text
+User
+ ↓
+SAS Token
+ ↓
+Blob
+```
+
+You can control:
+
+* Read / Write / Delete
+* Expiry time
+* Resource
+* IP restrictions
+* Protocol
+
+👉 **SAS = Temporary access**
+
+---
+
+## 4. Access Keys
+
+Storage Account has two keys:
+
+```text
+Storage Account
+    |
+    +-- Key1
+    +-- Key2
+```
+
+Used for authentication.
+
+### Security
+
+❌ Don't hard-code keys in application code.
+
+✅ Prefer:
+
+```text
+Managed Identity
+      ↓
+  Entra ID
+      ↓
+     RBAC
+      ↓
+   Storage
+```
+
+---
+
+## 5. Private Endpoint 🔴🔴
+
+Private Endpoint allows access to Azure Storage through a private IP inside your VNet.
+
+```text
+VNet
+ |
+Private Endpoint
+ |
+Azure Storage
+```
+
+👉 Storage doesn't need to be accessed through a public endpoint from your application network.
+
+**Simple:** Private Endpoint = Access Storage privately through VNet.
+
+---
+
+## 6. Firewall / Network Rules 🔴
+
+You can restrict which networks can access the Storage Account.
+
+Example:
+
+```text
+Storage Account
+      |
+   Firewall
+      |
+ +----+----+
+ |         |
+VNet     Allowed IP
+```
+
+👉 Block unwanted network access.
+
+---
+
+## 7. Encryption 🔴
+
+Azure Storage automatically encrypts data at rest.
+
+```text
+Data
+ ↓
+Encryption
+ ↓
+Stored securely
+```
+
+You can use Microsoft-managed keys or, where supported, customer-managed keys.
+
+👉 Encryption = Protect stored data.
+
+---
+
+## ⭐ Secure Azure Storage Pattern
+
+```text
+                 Azure Storage
+                      |
+       +--------------+--------------+
+       |              |              |
+ Public Access       Identity       Network
+    Disabled          RBAC        Private Endpoint
+                       |              |
+                   Entra ID       Firewall
+                       |
+                Managed Identity
+```
+
+---
+
+## 🧠 Easy Interview Memory
+
+```text
+Public Access → Disable
+RBAC          → Who can access?
+SAS           → Temporary access
+Access Key    → Secret credential
+Private EP    → Private network access
+Firewall      → Network restriction
+Encryption    → Protect data
+```
+
+---
+
+## 🎯 Interview Answer
+
+> To secure Azure Storage, I disable unnecessary public access, use Microsoft Entra ID with RBAC for identity-based access, use managed identities where possible, restrict network access using Private Endpoint and firewall rules, use SAS for temporary delegated access, and enable encryption for data protection.
