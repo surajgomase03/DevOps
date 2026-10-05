@@ -1,4 +1,15 @@
-# 🚀 Azure Pipelines + Variables + Environments + Agents + Service Connections — Detailed Pointwise Notes
+# Azure Pipelines — Combined Interview Notes
+
+This file combines two sets of notes:
+
+- **Part A:** Azure Pipelines + Variables + Environments + Agents + Service Connections (detailed, pointwise reference)
+- **Part B:** Azure DevOps & Azure Pipelines — Complete Interview Notes (fundamentals to production-level, with interview phrasing and "what not to say")
+
+Read Part A for deep, structured reference (YAML syntax, tables, commands). Read Part B for interview storytelling, analogies, and "don't say this / say this instead" guidance. Together they cover the same topics from two angles, which is useful for revision.
+
+---
+
+# PART A: Azure Pipelines + Variables + Environments + Agents + Service Connections — Detailed Pointwise Notes
 
 > **Mental model:**
 > **Agent** = *where* the pipeline runs · **Service connection** = *how* it authenticates · **Environment** = *where/under what controls* it deploys · **Artifact** = *what* gets promoted · **Variable** = configuration · **Parameter** = pipeline input/structure.
@@ -23,45 +34,43 @@ Azure Resource   (via Service Connection)
 Build → DEV → QA → Approval / Checks → PROD
 ```
 
----
+## A — Contents
 
-## 📑 Contents
-
-1. [Azure Pipelines Overview](#1-azure-pipelines-overview)
-2. [Pipeline Structure (Pipeline → Stage → Job → Step → Task)](#2-pipeline-structure)
-3. [YAML Basics & Step Types](#3-yaml-basics--step-types)
-4. [Triggers (CI, PR, Scheduled, Pipeline)](#4-triggers)
-5. [Variables](#5-variables)
-6. [Parameters](#6-parameters)
-7. [Variable vs Parameter vs Secret](#7-variable-vs-parameter-vs-secret)
-8. [Expressions & Evaluation Order](#8-expressions--evaluation-order)
-9. [Conditions & Dependencies](#9-conditions--dependencies)
-10. [Artifacts & Build Once, Deploy Many](#10-artifacts--build-once-deploy-many)
-11. [Templates](#11-templates)
-12. [Environments, Deployment Jobs, Approvals & Checks](#12-environments-deployment-jobs-approvals--checks)
-13. [Agents, Pools, Capabilities & Demands](#13-agents-pools-capabilities--demands)
-14. [Service Connections & Workload Identity Federation](#14-service-connections--workload-identity-federation)
-15. [Key Vault Integration](#15-key-vault-integration)
-16. [Useful Pipeline Patterns](#16-useful-pipeline-patterns)
-17. [Complete Examples](#17-complete-examples)
-18. [Complete CI/CD Architecture](#18-complete-cicd-architecture)
-19. [Command Cheat Sheet](#19-command-cheat-sheet)
-20. [Hands-On Lab](#20-hands-on-lab)
-21. [Troubleshooting](#21-troubleshooting)
-22. [Interview Questions & Answers (40)](#22-interview-questions--answers)
-23. [Final Memory Map](#23-final-memory-map)
+1. Azure Pipelines Overview
+2. Pipeline Structure (Pipeline → Stage → Job → Step → Task)
+3. YAML Basics & Step Types
+4. Triggers (CI, PR, Scheduled, Pipeline)
+5. Variables
+6. Parameters
+7. Variable vs Parameter vs Secret
+8. Expressions & Evaluation Order
+9. Conditions & Dependencies
+10. Artifacts & Build Once, Deploy Many
+11. Templates
+12. Environments, Deployment Jobs, Approvals & Checks
+13. Agents, Pools, Capabilities & Demands
+14. Service Connections & Workload Identity Federation
+15. Key Vault Integration
+16. Useful Pipeline Patterns
+17. Complete Examples
+18. Complete CI/CD Architecture
+19. Command Cheat Sheet
+20. Hands-On Lab
+21. Troubleshooting
+22. Interview Questions & Answers (40+)
+23. Final Memory Map
 
 ---
 
-# 1. Azure Pipelines Overview
+## A1. Azure Pipelines Overview
 
 **What:**
-* Azure DevOps' **CI/CD service**.
-* Automates: **build, test, package, security scan, deploy**.
+- Azure DevOps' **CI/CD service**.
+- Automates: **build, test, package, security scan, deploy**.
 
 **CI vs CD:**
-* **CI (Continuous Integration):** every code change is built and tested automatically.
-* **CD (Continuous Delivery/Deployment):** the built artifact is deployed through environments automatically (with approvals where needed).
+- **CI (Continuous Integration):** every code change is built and tested automatically.
+- **CD (Continuous Delivery/Deployment):** the built artifact is deployed through environments automatically (with approvals where needed).
 
 ```text
 Git Push → Pipeline Trigger → Build → Unit Test → Security Scan → Package
@@ -69,8 +78,8 @@ Git Push → Pipeline Trigger → Build → Unit Test → Security Scan → Pack
 ```
 
 **Pipeline types:**
-* **YAML pipelines** (`azure-pipelines.yml`): code in the repo, versioned and reviewed. **Use this.**
-* **Classic pipelines** (UI-designed build and release): legacy. Know they exist.
+- **YAML pipelines** (`azure-pipelines.yml`): code in the repo, versioned and reviewed. **Use this.**
+- **Classic pipelines** (UI-designed build and release): legacy. Know they exist.
 
 **Where YAML lives:** usually the repo root (`azure-pipelines.yml`), and you point the pipeline at it (**Pipelines → New pipeline → Azure Repos Git → existing YAML file**).
 
@@ -78,7 +87,7 @@ Git Push → Pipeline Trigger → Build → Unit Test → Security Scan → Pack
 
 ---
 
-# 2. Pipeline Structure
+## A2. Pipeline Structure
 
 ```text
 Pipeline
@@ -122,13 +131,13 @@ Script → your own shell commands
 
 **Why multiple jobs?** Run in parallel, on different OS/agents (Linux build + Windows build), or split slow test suites.
 
-> A **step** can be a task, a script (`script`, `bash`, `powershell`, `pwsh`), or another supported step type, as noted in the next section.
+> A **step** can be a task, a script (`script`, `bash`, `powershell`, `pwsh`), or another supported step type.
 
 ---
 
-# 3. YAML Basics & Step Types
+## A3. YAML Basics & Step Types
 
-## 3.1 Minimal pipeline
+### Minimal pipeline
 
 ```yaml
 trigger:
@@ -143,14 +152,14 @@ steps:
 
 If you use only `steps:`, Azure Pipelines creates one implicit stage and one job.
 
-## 3.2 Important top-level sections
+### Important top-level sections
 
 ```text
 name, trigger, pr, schedules, resources, variables, parameters,
 pool, stages, jobs, steps, extends, lockBehavior
 ```
 
-## 3.3 Step types
+### Step types
 
 | Step | Purpose |
 | --- | --- |
@@ -178,7 +187,7 @@ steps:
   artifact: drop
 ```
 
-## 3.4 Useful job/step settings
+### Useful job/step settings
 
 | Setting | Meaning |
 | --- | --- |
@@ -190,7 +199,7 @@ steps:
 | `env:` | Environment variables for a step |
 | `name:` | Step ID (used for output variables) |
 
-## 3.5 Pipeline `name` (run number)
+### Pipeline `name` (run number)
 
 ```yaml
 name: $(Date:yyyyMMdd)$(Rev:.r)       # Build.BuildNumber, e.g. 20260315.1
@@ -198,11 +207,11 @@ name: $(Date:yyyyMMdd)$(Rev:.r)       # Build.BuildNumber, e.g. 20260315.1
 
 ---
 
-# 4. Triggers
+## A4. Triggers
 
 A **trigger** defines *when* a pipeline starts.
 
-## 4.1 CI trigger (code pushed)
+### CI trigger (code pushed)
 
 ```yaml
 trigger:
@@ -226,19 +235,19 @@ trigger:
 trigger: none             # disable CI trigger (run manually / by PR policy / schedule)
 ```
 
-## 4.2 PR validation
+### PR validation
 
 ```text
 Developer → feature branch → PR → main → Validation pipeline → Build/Test
 ```
 
-* **CI trigger = code pushed.**
-* **PR validation = code proposed for merge.**
+- **CI trigger = code pushed.**
+- **PR validation = code proposed for merge.**
 
 > ⭐ **For Azure Repos Git**, the YAML `pr:` trigger is **not** used. Configure PR validation through **Branch policy → Build validation** on the target branch.
 > The `pr:` trigger works for **GitHub** and **Bitbucket** repositories. This is a classic interview gotcha.
 
-## 4.3 Scheduled trigger
+### Scheduled trigger
 
 ```yaml
 schedules:
@@ -251,7 +260,7 @@ schedules:
 
 > Cron schedules are in **UTC**.
 
-## 4.4 Pipeline completion trigger
+### Pipeline completion trigger
 
 ```yaml
 resources:
@@ -265,7 +274,7 @@ resources:
 
 → A CD pipeline starts when the CI pipeline completes.
 
-## 4.5 Other triggers and resources
+### Other triggers and resources
 
 | Trigger | Notes |
 | --- | --- |
@@ -276,7 +285,7 @@ resources:
 
 ---
 
-# 5. Variables
+## A5. Variables
 
 **Variables store values used by the pipeline.**
 
@@ -297,7 +306,7 @@ Without: deploy payment-api dev  (repeated 20 times)
 With:    deploy $(appName) $(environment)
 ```
 
-## 5.1 Where variables can be defined
+### Where variables can be defined
 
 | Place | Notes |
 | --- | --- |
@@ -308,7 +317,7 @@ With:    deploy $(appName) $(environment)
 | **Logging commands** | Set by scripts: `##vso[task.setvariable ...]` |
 | **Predefined** | Provided by the system (`Build.BuildId`, ...) |
 
-## 5.2 Scope
+### Scope
 
 ```text
 Pipeline → Stage → Job → Step
@@ -330,7 +339,7 @@ stages:
       jobVar: x               # job level
 ```
 
-## 5.3 Variable groups
+### Variable groups
 
 ```text
               Variable Group  (Library)
@@ -345,13 +354,13 @@ variables:
   value: payment-api
 ```
 
-* Centralized management (for example `DEV_URL`, `QA_URL`, `PROD_URL`).
-* Have **security** (who can use/edit) and can require **approvals/checks** on use.
-* A pipeline must be **authorized** to use a group.
-* Can **link secrets from Azure Key Vault**.
-* Use **one group per environment** (`payment-dev`, `payment-prod`).
+- Centralized management (for example `DEV_URL`, `QA_URL`, `PROD_URL`).
+- Have **security** (who can use/edit) and can require **approvals/checks** on use.
+- A pipeline must be **authorized** to use a group.
+- Can **link secrets from Azure Key Vault**.
+- Use **one group per environment** (`payment-dev`, `payment-prod`).
 
-## 5.4 Predefined variables (know these)
+### Predefined variables (know these)
 
 | Variable | Meaning |
 | --- | --- |
@@ -369,13 +378,13 @@ variables:
 | `System.PullRequest.*` | PR details |
 | `System.AccessToken` | Token of the pipeline's build identity (for REST/git calls) |
 
-## 5.5 Environment variables vs pipeline variables
+### Environment variables vs pipeline variables
 
 ```text
 Azure Pipeline variable  ≠  OS environment variable
 ```
 
-* Pipeline variables are **mapped to environment variables** for scripts, with names **uppercased and `.` → `_`**: `Build.BuildNumber` → `$BUILD_BUILDNUMBER`.
+- Pipeline variables are **mapped to environment variables** for scripts, with names **uppercased and `.` → `_`**: `Build.BuildNumber` → `$BUILD_BUILDNUMBER`.
 
 | Shell | Syntax |
 | --- | --- |
@@ -383,14 +392,14 @@ Azure Pipeline variable  ≠  OS environment variable
 | CMD | `%BUILD_BUILDNUMBER%` |
 | PowerShell | `$env:BUILD_BUILDNUMBER` |
 
-## 5.6 Secret variables 🔴
+### Secret variables 🔴
 
 Secrets: passwords, API keys, tokens, client secrets, private credentials.
 
-* ❌ Never put real secrets in source-controlled YAML.
-* ✅ Use **secret variables** (UI), **variable groups** (secret), or **Azure Key Vault**.
-* Secrets are **masked** in logs, but **never intentionally print them**.
-* ⭐ **Secrets are NOT automatically available as environment variables.** Map them explicitly:
+- ❌ Never put real secrets in source-controlled YAML.
+- ✅ Use **secret variables** (UI), **variable groups** (secret), or **Azure Key Vault**.
+- Secrets are **masked** in logs, but **never intentionally print them**.
+- ⭐ **Secrets are NOT automatically available as environment variables.** Map them explicitly:
 
 ```yaml
 - script: ./deploy.sh
@@ -398,10 +407,10 @@ Secrets: passwords, API keys, tokens, client secrets, private credentials.
     DB_PASSWORD: $(DB_PASSWORD)     # explicit mapping
 ```
 
-* ❌ `echo $(DB_PASSWORD)`: don't do this.
-* Secrets are not passed to **PR builds from forks** by default.
+- ❌ `echo $(DB_PASSWORD)`: don't do this.
+- Secrets are not passed to **PR builds from forks** by default.
 
-## 5.7 Output variables (pass values between steps/jobs/stages)
+### Output variables (pass values between steps/jobs/stages)
 
 ```yaml
 steps:
@@ -421,7 +430,7 @@ steps:
 # Another stage uses: stageDependencies.<Stage>.<Job>.outputs['<step>.<var>']
 ```
 
-## 5.8 Runtime variables
+### Runtime variables
 
 Values supplied or changed **when a pipeline runs** (for example set in the Run dialog, if the variable is "settable at queue time").
 
@@ -431,10 +440,10 @@ Run Pipeline → environment = QA → Deploy QA
 
 ---
 
-# 6. Parameters
+## A6. Parameters
 
-* **Parameters are pipeline/template inputs**, evaluated at **compile (template-expansion) time**.
-* They have **types**, **defaults** and optional allowed **values**, and appear as **form fields** in the Run dialog.
+- **Parameters are pipeline/template inputs**, evaluated at **compile (template-expansion) time**.
+- They have **types**, **defaults** and optional allowed **values**, and appear as **form fields** in the Run dialog.
 
 ```yaml
 parameters:
@@ -469,7 +478,7 @@ environment: ${{ parameters.environment }}
 
 ---
 
-# 7. Variable vs Parameter vs Secret
+## A7. Variable vs Parameter vs Secret
 
 | Feature | Purpose | Example | Evaluated |
 | --- | --- | --- | --- |
@@ -488,9 +497,9 @@ Environment → Deployment target + controls (a different thing!)
 
 ---
 
-# 8. Expressions & Evaluation Order
+## A8. Expressions & Evaluation Order
 
-## 8.1 Three syntaxes ⭐
+### Three syntaxes ⭐
 
 | Syntax | Name | When evaluated | Example |
 | --- | --- | --- | --- |
@@ -504,15 +513,15 @@ $( )    → runtime        (replaced just before the task executes; stays litera
 $[ ]    → runtime        (conditions, variable assignment, dependencies/outputs)
 ```
 
-## 8.2 Rules of thumb
+### Rules of thumb
 
-* Need to **change the pipeline structure** (add/remove stages, loop)? → `${{ }}` with **parameters**.
-* Need a **value inside a script/task input**? → `$(var)`.
-* Need a **condition or computed value** at runtime? → `$[ ]` / `condition:`.
-* A macro `$(var)` for an undefined variable is left as the literal text `$(var)`.
-* Template expressions **can't see runtime values** (such as output variables).
+- Need to **change the pipeline structure** (add/remove stages, loop)? → `${{ }}` with **parameters**.
+- Need a **value inside a script/task input**? → `$(var)`.
+- Need a **condition or computed value** at runtime? → `$[ ]` / `condition:`.
+- A macro `$(var)` for an undefined variable is left as the literal text `$(var)`.
+- Template expressions **can't see runtime values** (such as output variables).
 
-## 8.3 Useful functions
+### Useful functions
 
 ```text
 eq, ne, gt, lt, and, or, not, contains, startsWith, endsWith, in, notIn,
@@ -525,9 +534,9 @@ condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/he
 
 ---
 
-# 9. Conditions & Dependencies
+## A9. Conditions & Dependencies
 
-## 9.1 Conditions
+### Conditions
 
 A **condition** decides whether a stage/job/step runs.
 
@@ -561,10 +570,10 @@ Build → Test (❌ fails) → Cleanup (condition: always()) → still runs
 condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
 ```
 
-## 9.2 Dependencies (`dependsOn`)
+### Dependencies (`dependsOn`)
 
-* **Stages** run **sequentially in order** by default. Each depends on the previous one.
-* **Jobs** in a stage run **in parallel** by default.
+- **Stages** run **sequentially in order** by default. Each depends on the previous one.
+- **Jobs** in a stage run **in parallel** by default.
 
 ```yaml
 stages:
@@ -589,9 +598,9 @@ Build ──┬── Test ──────┐
 
 ---
 
-# 10. Artifacts & Build Once, Deploy Many
+## A10. Artifacts & Build Once, Deploy Many
 
-## 10.1 What are artifacts?
+### What are artifacts?
 
 Outputs produced by a build and stored for later use (for example `app.zip`, Helm chart, Terraform plan, test results).
 
@@ -599,7 +608,7 @@ Outputs produced by a build and stored for later use (for example `app.zip`, Hel
 Source → Build → Application Package → Artifact → Deploy
 ```
 
-## 10.2 Types of artifacts (interview)
+### Types of artifacts (interview)
 
 | Type | Used for | How |
 | --- | --- | --- |
@@ -619,19 +628,19 @@ Source → Build → Application Package → Artifact → Deploy
 
 > **Deployment jobs automatically download** the current pipeline's artifacts (into `$(Pipeline.Workspace)/<artifact>`). **Regular jobs** need an explicit `download`/`DownloadPipelineArtifact`.
 
-## 10.3 ⭐ Build once, deploy many
+### ⭐ Build once, deploy many
 
 ```text
 Source → Build ONCE → Artifact → DEV → QA → PROD
 ```
 
-* Promote the **same immutable artifact** (or image tag/digest) through environments.
-* **Don't rebuild** a different binary for each environment.
-* Supply **environment-specific configuration** separately (variable groups, ConfigMaps, Key Vault).
+- Promote the **same immutable artifact** (or image tag/digest) through environments.
+- **Don't rebuild** a different binary for each environment.
+- Supply **environment-specific configuration** separately (variable groups, ConfigMaps, Key Vault).
 
 ---
 
-# 11. Templates
+## A11. Templates
 
 Templates let you **reuse YAML**.
 
@@ -642,7 +651,7 @@ With:                Template
                    A     B     C
 ```
 
-## 11.1 Template types
+### Template types
 
 | Type | Reuses |
 | --- | --- |
@@ -652,7 +661,7 @@ With:                Template
 | **Variable** template | Variables |
 | **Extends** template | A **required pipeline skeleton** (governance) |
 
-## 11.2 Example: a deploy job template
+### Example: a deploy job template
 
 `templates/deploy.yml`:
 
@@ -699,7 +708,7 @@ Used from the main pipeline:
       serviceConnection: sc-azure-prod
 ```
 
-## 11.4 Shared template repo
+### Shared template repo
 
 ```yaml
 resources:
@@ -713,7 +722,7 @@ steps:
 - template: build.yml@templates
 ```
 
-## 11.5 `extends` (governance)
+### `extends` (governance)
 
 ```yaml
 extends:
@@ -722,13 +731,13 @@ extends:
     appName: payment-api
 ```
 
-* The organization's template controls the pipeline structure (security scan, approvals); teams can only fill in allowed parameters.
-* Combine with the **"Required template" check** on environments/service connections so only pipelines that extend the approved template can deploy.
+- The organization's template controls the pipeline structure (security scan, approvals); teams can only fill in allowed parameters.
+- Combine with the **"Required template" check** on environments/service connections so only pipelines that extend the approved template can deploy.
 
-## 11.6 Why templates?
+### Why templates?
 
-* Standard build process, security scanning, Docker build, Terraform validation, common deployment logic
-* **Organization-wide CI/CD standards** and less copy-paste
+- Standard build process, security scanning, Docker build, Terraform validation, common deployment logic
+- **Organization-wide CI/CD standards** and less copy-paste
 
 ```text
 templates/
@@ -740,9 +749,9 @@ templates/
 
 ---
 
-# 12. Environments, Deployment Jobs, Approvals & Checks
+## A12. Environments, Deployment Jobs, Approvals & Checks
 
-## 12.1 What is an Environment?
+### What is an Environment?
 
 A **deployment target or logical deployment boundary**: `DEV`, `QA`, `UAT`, `PROD`.
 
@@ -751,14 +760,14 @@ Pipeline → DEV Environment → QA Environment → PROD Environment
 ```
 
 **Environments give you:**
-* **Deployment history** (which run deployed what, and when)
-* **Permissions** (who can use/manage the environment)
-* **Approvals and checks** (production protection)
-* **Resources** (Kubernetes namespaces, VMs) with traceability
+- **Deployment history** (which run deployed what, and when)
+- **Permissions** (who can use/manage the environment)
+- **Approvals and checks** (production protection)
+- **Resources** (Kubernetes namespaces, VMs) with traceability
 
 > ⚠️ If a YAML pipeline references a **non-existent environment**, it can be **auto-created with no checks**. Create production environments **first** and add approvals.
 
-## 12.2 Deployment jobs
+### Deployment jobs
 
 ```yaml
 jobs:
@@ -776,11 +785,11 @@ Deployment Job → Environment → Production (with approvals/checks)
 ```
 
 **Why a deployment job (not a normal job)?**
-* Targets an **environment** → enables **approvals, checks and history**.
-* **Automatically downloads artifacts**.
-* Supports **deployment strategies** and lifecycle hooks.
+- Targets an **environment** → enables **approvals, checks and history**.
+- **Automatically downloads artifacts**.
+- Supports **deployment strategies** and lifecycle hooks.
 
-## 12.3 Deployment strategies
+### Deployment strategies
 
 | Strategy | Behavior |
 | --- | --- |
@@ -805,22 +814,22 @@ strategy:
         - script: echo "Rollback"
 ```
 
-## 12.4 Typical environment flow
+### Typical environment flow
 
 ```text
 Build → Deploy DEV → Automated Tests → Deploy QA → Approval → Deploy PROD
 ```
 
-## 12.5 Approvals 🔴
+### Approvals 🔴
 
 ```text
 Pipeline → Build → QA → [Approval required] → Authorized user → PROD continues
 ```
 
-* Configured on the **environment** (and also on service connections, variable groups, agent pools, secure files).
-* Settings: **approvers** (users/groups), instructions, timeout, option for requester to approve their own run (disable for production), approval order.
+- Configured on the **environment** (and also on service connections, variable groups, agent pools, secure files).
+- Settings: **approvers** (users/groups), instructions, timeout, option for requester to approve their own run (disable for production), approval order.
 
-## 12.6 Checks 🔴
+### Checks 🔴
 
 | Check | Purpose |
 | --- | --- |
@@ -837,7 +846,7 @@ Pipeline → Build → QA → [Approval required] → Authorized user → PROD c
 Pipeline → Production Environment → Checks → Pass → Deployment
 ```
 
-## 12.7 Environment permissions
+### Environment permissions
 
 ```text
 Production
@@ -850,9 +859,9 @@ Production
 
 ---
 
-# 13. Agents, Pools, Capabilities & Demands
+## A13. Agents, Pools, Capabilities & Demands
 
-## 13.1 What is an agent?
+### What is an agent?
 
 The **machine that executes pipeline jobs**.
 
@@ -860,7 +869,7 @@ The **machine that executes pipeline jobs**.
 Pipeline → Job → Agent → commands run (git, docker, terraform, python, kubectl)
 ```
 
-## 13.2 Microsoft-hosted vs self-hosted
+### Microsoft-hosted vs self-hosted
 
 ```yaml
 pool:
@@ -885,16 +894,16 @@ pool:
 
 > ⚠️ **Parallel jobs:** Microsoft-hosted agents need **parallel job capacity**. New organizations may need to **request a free parallelism grant**. The error *"No hosted parallelism has been purchased or granted"* means this. Check current Azure DevOps docs for limits and pricing.
 
-## 13.3 Why self-hosted?
+### Why self-hosted?
 
-* Reach **private resources** (private AKS, databases, private endpoints, on-prem)
-* Custom software/hardware, licensed tools
-* Faster builds with **caches** (persistent disk)
-* Compliance/network control
+- Reach **private resources** (private AKS, databases, private endpoints, on-prem)
+- Custom software/hardware, licensed tools
+- Faster builds with **caches** (persistent disk)
+- Compliance/network control
 
 **Responsibilities when self-hosted:** OS, patching, security, tools, networking, capacity, agent software lifecycle.
 
-## 13.4 Agent pool
+### Agent pool
 
 A **collection of agents**.
 
@@ -905,10 +914,10 @@ Agent Pool
 └── Agent-03
 ```
 
-* Pools are **organization-level**, with **project-level** access. Pipelines must be **authorized** to use a pool.
-* Job waits in the queue if all agents are busy.
+- Pools are **organization-level**, with **project-level** access. Pipelines must be **authorized** to use a pool.
+- Job waits in the queue if all agents are busy.
 
-## 13.5 Capabilities & demands
+### Capabilities & demands
 
 **Capabilities** = what an agent has:
 
@@ -931,9 +940,9 @@ Job → Demand: docker → matching agent found → runs
                      → no matching agent → job WAITS in queue
 ```
 
-* **System capabilities** are auto-detected, **user capabilities** are added manually.
+- **System capabilities** are auto-detected, **user capabilities** are added manually.
 
-## 13.6 Registering a self-hosted agent (Linux)
+### Registering a self-hosted agent (Linux)
 
 ```text
 Create Agent Pool → Download agent → Configure → Authenticate/register → Agent shows Online
@@ -954,10 +963,10 @@ sudo ./svc.sh start
 sudo ./svc.sh status
 ```
 
-* The **PAT is used only for registration** (needs **Agent Pools: Read & manage**). The agent then uses its own credentials.
-* Alternatives: authenticate with a **service principal**. Run in a **container** or on **AKS**.
+- The **PAT is used only for registration** (needs **Agent Pools: Read & manage**). The agent then uses its own credentials.
+- Alternatives: authenticate with a **service principal**. Run in a **container** or on **AKS**.
 
-## 13.7 Scaling agents
+### Scaling agents
 
 | Option | Notes |
 | --- | --- |
@@ -965,7 +974,7 @@ sudo ./svc.sh status
 | **Managed DevOps Pools** | Newer Azure-managed service for self-hosted-style pools inside your VNet |
 | **Containers / AKS** | Agents as pods (for example scaled with KEDA) |
 
-## 13.8 🔴 Self-hosted agent security
+### 🔴 Self-hosted agent security
 
 ```text
 Pipeline code → Agent → commands execute with the agent's access
@@ -973,15 +982,15 @@ Pipeline code → Agent → commands execute with the agent's access
 
 If untrusted pipeline code controls the agent, it can compromise the machine and any credentials on it.
 
-* Don't keep long-lived credentials on agents. Prefer **service connections with WIF**.
-* Keep agents **patched**, with **least privilege** and restricted network access.
-* **Separate production agent pools** from general ones.
-* **Don't let untrusted pipelines/forks** use sensitive pools.
-* Prefer **ephemeral agents** (fresh per job).
-* Restrict **who can use and manage** the pool. Require **approvals/checks** on the pool.
-* Monitor agent activity and logs.
+- Don't keep long-lived credentials on agents. Prefer **service connections with WIF**.
+- Keep agents **patched**, with **least privilege** and restricted network access.
+- **Separate production agent pools** from general ones.
+- **Don't let untrusted pipelines/forks** use sensitive pools.
+- Prefer **ephemeral agents** (fresh per job).
+- Restrict **who can use and manage** the pool. Require **approvals/checks** on the pool.
+- Monitor agent activity and logs.
 
-## 13.9 Linux vs Windows agents
+### Linux vs Windows agents
 
 | Linux | Windows |
 | --- | --- |
@@ -989,7 +998,7 @@ If untrusted pipeline code controls the agent, it can compromise the machine and
 
 Choose the OS the application needs.
 
-## 13.10 Job types
+### Job types
 
 | Type | Notes |
 | --- | --- |
@@ -1000,9 +1009,9 @@ Choose the OS the application needs.
 
 ---
 
-# 14. Service Connections & Workload Identity Federation
+## A14. Service Connections & Workload Identity Federation
 
-## 14.1 What is a service connection?
+### What is a service connection?
 
 A way for pipelines to **authenticate to external services**.
 
@@ -1019,7 +1028,7 @@ Azure Pipeline → Service Connection → Azure Subscription → AKS / VM / Stor
 ✅ Service Connection → Identity → Azure Resource
 ```
 
-## 14.2 Azure Resource Manager (ARM) service connection
+### Azure Resource Manager (ARM) service connection
 
 ```text
 Azure DevOps → ARM Service Connection → Microsoft Entra ID → Azure Subscription → Azure Resource
@@ -1035,7 +1044,7 @@ Azure DevOps → ARM Service Connection → Microsoft Entra ID → Azure Subscri
 
 **Scope:** subscription, **resource group** (preferred), or management group.
 
-## 14.3 Service principal
+### Service principal
 
 An **application identity in Microsoft Entra ID** that can be assigned **Azure RBAC** roles.
 
@@ -1050,25 +1059,25 @@ Pipeline → Service Connection → Service Principal → Client Secret → Entr
 Problem: secret rotation, risk if leaked, secrets expire (pipelines suddenly fail)
 ```
 
-## 14.4 🔴 Workload Identity Federation (WIF)
+### 🔴 Workload Identity Federation (WIF)
 
 ```text
 Azure Pipeline → Federated Identity → Microsoft Entra ID → Azure RBAC → Azure Resource
 ```
 
-* The pipeline obtains a **short-lived token** through **OIDC federation**. **No long-lived client secret** is stored.
-* In Entra ID, a **federated credential** on the app registration/managed identity trusts Azure DevOps:
-  * **Issuer:** `https://vstoken.dev.azure.com/<organization-id>`
-  * **Subject:** `sc://<organization>/<project>/<service-connection-name>`
+- The pipeline obtains a **short-lived token** through **OIDC federation**. **No long-lived client secret** is stored.
+- In Entra ID, a **federated credential** on the app registration/managed identity trusts Azure DevOps:
+  - **Issuer:** `https://vstoken.dev.azure.com/<organization-id>`
+  - **Subject:** `sc://<organization>/<project>/<service-connection-name>`
 
 > 🎤 *Workload identity federation allows Azure DevOps to authenticate to Azure using a federated identity without storing a long-lived client secret in the service connection.*
 
 **Advantages:**
-* No secret to store, leak or rotate
-* Short-lived tokens, better security posture
-* Fewer outages from expired secrets
+- No secret to store, leak or rotate
+- Short-lived tokens, better security posture
+- Fewer outages from expired secrets
 
-## 14.5 WIF vs client secret
+### WIF vs client secret
 
 | Client secret | Workload identity federation |
 | --- | --- |
@@ -1077,17 +1086,17 @@ Azure Pipeline → Federated Identity → Microsoft Entra ID → Azure RBAC → 
 | Leak risk | Much lower risk |
 | Older approach | **Modern, recommended** |
 
-## 14.6 Managed identity vs WIF
+### Managed identity vs WIF
 
-* **Managed identity** = an Azure-managed identity **for an Azure resource** (VM, AKS, App Service) so the resource needs no stored password.
-* **WIF** = lets a workload **outside** the Azure resource context (such as an Azure DevOps pipeline or GitHub Actions) authenticate **without a secret**.
+- **Managed identity** = an Azure-managed identity **for an Azure resource** (VM, AKS, App Service) so the resource needs no stored password.
+- **WIF** = lets a workload **outside** the Azure resource context (such as an Azure DevOps pipeline or GitHub Actions) authenticate **without a secret**.
 
 ```text
 Azure VM → Managed Identity → Key Vault
 Pipeline → WIF → Entra ID → Azure
 ```
 
-## 14.7 Authentication vs authorization
+### Authentication vs authorization
 
 ```text
 Authentication = Who are you?        → Microsoft Entra ID
@@ -1100,16 +1109,16 @@ Pipeline → Federated identity → Entra ID (authenticated) → Azure RBAC role
 
 > A common failure: **authentication succeeds but RBAC is missing** (identity valid, authorization insufficient).
 
-## 14.8 🔴 Least privilege & hardening
+### 🔴 Least privilege & hardening
 
-* Don't give **Owner**. Use the minimum role (`Contributor` on a **resource group**, or specific roles like *AcrPush*, *Azure Kubernetes Service Cluster User*).
-* Automatic WIF creation may assign **Contributor at subscription scope**. **Narrow it** afterwards.
-* **Separate service connections** per environment (`sc-azure-dev`, `sc-azure-prod`).
-* **Don't tick "Grant access permission to all pipelines."** Authorize only the pipelines that need it.
-* Add **approvals/checks** (and **branch control**) on the production service connection.
-* Prefer a **dedicated identity per application/team**.
+- Don't give **Owner**. Use the minimum role (`Contributor` on a **resource group**, or specific roles like *AcrPush*, *Azure Kubernetes Service Cluster User*).
+- Automatic WIF creation may assign **Contributor at subscription scope**. **Narrow it** afterwards.
+- **Separate service connections** per environment (`sc-azure-dev`, `sc-azure-prod`).
+- **Don't tick "Grant access permission to all pipelines."** Authorize only the pipelines that need it.
+- Add **approvals/checks** (and **branch control**) on the production service connection.
+- Prefer a **dedicated identity per application/team**.
 
-## 14.9 Using a service connection in YAML
+### Using a service connection in YAML
 
 ```yaml
 - task: AzureCLI@2
@@ -1150,7 +1159,7 @@ Pipeline → Federated identity → Entra ID (authenticated) → Azure RBAC role
     containers: 'myacr.azurecr.io/payment-api:$(Build.BuildId)'
 ```
 
-## 14.10 Agent vs service connection vs environment
+### Agent vs service connection vs environment
 
 ```text
 Agent              = WHERE code runs
@@ -1165,13 +1174,13 @@ Pipeline → Agent → runs the deployment → Environment: PROD (approval/check
 
 ---
 
-# 15. Key Vault Integration
+## A15. Key Vault Integration
 
 ```text
 Azure Key Vault → Secrets → Azure DevOps Pipeline → Application deployment
 ```
 
-## 15.1 Options
+### Options
 
 | Option | How |
 | --- | --- |
@@ -1192,16 +1201,16 @@ Azure Key Vault → Secrets → Azure DevOps Pipeline → Application deployment
     DB_PASSWORD: $(DbPassword)           # still map secrets explicitly
 ```
 
-## 15.2 Permissions
+### Permissions
 
-* The service connection's identity needs **Get** and **List** on secrets (access policy) or the RBAC role **Key Vault Secrets User**.
-* Prefer **Azure RBAC** model for Key Vault, and a **private endpoint** where required.
+- The service connection's identity needs **Get** and **List** on secrets (access policy) or the RBAC role **Key Vault Secrets User**.
+- Prefer **Azure RBAC** model for Key Vault, and a **private endpoint** where required.
 
 ---
 
-# 16. Useful Pipeline Patterns
+## A16. Useful Pipeline Patterns
 
-## 16.1 Caching
+### Caching
 
 ```yaml
 - task: Cache@2
@@ -1212,7 +1221,7 @@ Azure Key Vault → Secrets → Azure DevOps Pipeline → Application deployment
     path: $(Pipeline.Workspace)/.npm
 ```
 
-## 16.2 Matrix strategy (parallel variations)
+### Matrix strategy (parallel variations)
 
 ```yaml
 strategy:
@@ -1225,14 +1234,14 @@ pool:
   vmImage: $(imageName)
 ```
 
-## 16.3 Parallelism
+### Parallelism
 
 ```yaml
 strategy:
   parallel: 4
 ```
 
-## 16.4 Container job
+### Container job
 
 ```yaml
 container: node:20
@@ -1240,7 +1249,7 @@ steps:
 - script: node --version
 ```
 
-## 16.5 Timeouts and retries
+### Timeouts and retries
 
 ```yaml
 - job: Build
@@ -1250,29 +1259,29 @@ steps:
     retryCountOnTaskFailure: 2
 ```
 
-## 16.6 Typical security/quality stages (DevSecOps)
+### Typical security/quality stages (DevSecOps)
 
 ```text
 Code → SAST (SonarQube) → Dependency scan → Container scan (Trivy) → IaC scan → Build → Deploy
 ```
 
-## 16.7 Best practices
+### Best practices
 
-* Use **YAML**, **templates** and **multi-stage** pipelines.
-* **Build once, deploy many**. Pin versions of tasks, images and templates.
-* Protect `main` with **PR validation** and **branch policies**.
-* **No secrets in YAML**. Use Key Vault and **WIF**.
-* **Least privilege** service connections, one per environment.
-* **Environments** with approvals/checks for production.
-* Set **timeouts**, use **caching**, and keep pipelines fast.
-* Fail fast: lint and unit tests first.
-* Use meaningful `displayName`s and publish test results.
+- Use **YAML**, **templates** and **multi-stage** pipelines.
+- **Build once, deploy many**. Pin versions of tasks, images and templates.
+- Protect `main` with **PR validation** and **branch policies**.
+- **No secrets in YAML**. Use Key Vault and **WIF**.
+- **Least privilege** service connections, one per environment.
+- **Environments** with approvals/checks for production.
+- Set **timeouts**, use **caching**, and keep pipelines fast.
+- Fail fast: lint and unit tests first.
+- Use meaningful `displayName`s and publish test results.
 
 ---
 
-# 17. Complete Examples
+## A17. Complete Examples
 
-## 17.1 Multi-stage pipeline (corrected, interview level)
+### Multi-stage pipeline (corrected, interview level)
 
 ```yaml
 trigger:
@@ -1345,7 +1354,7 @@ stages:
 
 > The `pr:` trigger from many tutorials is intentionally omitted: for **Azure Repos Git**, PR validation comes from **branch policy build validation**.
 
-## 17.2 Parameterized pipeline
+### Parameterized pipeline
 
 ```yaml
 parameters:
@@ -1378,7 +1387,7 @@ stages:
           - script: echo "Deploying to ${{ parameters.environment }}"
 ```
 
-## 17.3 Hierarchy to remember
+### Hierarchy to remember
 
 ```text
 Pipeline
@@ -1398,7 +1407,7 @@ Pipeline
 
 ---
 
-# 18. Complete CI/CD Architecture
+## A18. Complete CI/CD Architecture
 
 ```text
                          Azure DevOps
@@ -1441,11 +1450,11 @@ Git → PR validation → Build → Test → SonarQube → Docker build → Triv
 
 ---
 
-# 19. Command Cheat Sheet
+## A19. Command Cheat Sheet
 
 > Verify flags with `az pipelines --help`.
 
-## 19.1 Pipelines
+### Pipelines
 
 ```bash
 az extension add --name azure-devops
@@ -1465,7 +1474,7 @@ az pipelines runs list -o table
 az pipelines runs show --id <run-id>
 ```
 
-## 19.2 Pipeline variables and variable groups
+### Pipeline variables and variable groups
 
 ```bash
 az pipelines variable create --pipeline-name payment-ci --name appName --value payment-api
@@ -1477,21 +1486,21 @@ az pipelines variable-group create --name payment-dev \
 az pipelines variable-group list -o table
 ```
 
-## 19.3 Agents and pools
+### Agents and pools
 
 ```bash
 az pipelines pool list -o table
 az pipelines agent list --pool-id <pool-id> -o table
 ```
 
-## 19.4 Service connections
+### Service connections
 
 ```bash
 az devops service-endpoint list -o table
 az devops service-endpoint show --id <id>
 ```
 
-## 19.5 Self-hosted agent (Linux service)
+### Self-hosted agent (Linux service)
 
 ```bash
 ./config.sh --unattended --url https://dev.azure.com/<org> --auth pat --token <PAT> \
@@ -1501,7 +1510,7 @@ sudo ./svc.sh status
 ./run.sh                 # run interactively (for testing)
 ```
 
-## 19.6 Debugging a pipeline
+### Debugging a pipeline
 
 ```text
 Run pipeline → check "Enable system diagnostics"     (or variable: system.debug = true)
@@ -1523,7 +1532,7 @@ df -h
 
 ---
 
-# 20. Hands-On Lab
+## A20. Hands-On Lab
 
 | # | Task |
 | --- | --- |
@@ -1557,9 +1566,9 @@ df -h
 
 ---
 
-# 21. Troubleshooting
+## A21. Troubleshooting
 
-## 21.1 Pipeline not starting
+### Pipeline not starting
 
 ```text
 1. YAML syntax valid?       (Validate / Preview in the editor)
@@ -1577,18 +1586,18 @@ df -h
 7. Repository connection / permissions OK?
 ```
 
-## 21.2 Job waiting for an agent
+### Job waiting for an agent
 
 ```text
 Job → Agent Pool → Available agent? → Agent online? → Required capability? → Demands satisfied?
 ```
 
-* No matching agent → job stays **queued**.
-* *"No hosted parallelism has been purchased or granted"* → request a free grant or buy parallel jobs.
-* Self-hosted agent **offline** → service stopped, VM down, PAT/auth problem, network/proxy.
-* All agents busy → add agents / use VMSS.
+- No matching agent → job stays **queued**.
+- *"No hosted parallelism has been purchased or granted"* → request a free grant or buy parallel jobs.
+- Self-hosted agent **offline** → service stopped, VM down, PAT/auth problem, network/proxy.
+- All agents busy → add agents / use VMSS.
 
-## 21.3 Deployment authentication failed
+### Deployment authentication failed
 
 ```text
 Pipeline → Service Connection → Is the connection authorized for this pipeline?
@@ -1611,7 +1620,7 @@ Authentication succeeded BUT RBAC permission missing
 | Key Vault `Forbidden` | No Get/List (or *Secrets User* role), or Key Vault firewall blocks the agent |
 | Can't reach a private resource | Microsoft-hosted agent has no private network access. Use a **self-hosted agent in the VNet** |
 
-## 21.4 Production deployment doesn't start
+### Production deployment doesn't start
 
 ```text
 Build → Artifact → Deployment stage → Condition → Environment → Approval → Checks → Permission
@@ -1619,7 +1628,7 @@ Build → Artifact → Deployment stage → Condition → Environment → Approv
 
 Waiting because of: **approval pending**, **environment check failed** (branch control, business hours, exclusive lock), **pipeline not authorized** for the environment, or the stage **condition** evaluated to false.
 
-## 21.4b Other common problems
+### Other common problems
 
 | Problem | Likely cause |
 | --- | --- |
@@ -1637,9 +1646,9 @@ Waiting because of: **approval pending**, **environment check failed** (branch c
 
 ---
 
-# 22. Interview Questions & Answers
+## A22. Interview Questions & Answers
 
-## 22.1 Azure Pipelines
+### Azure Pipelines
 
 1. **What is Azure Pipelines?** A CI/CD service that automatically builds, tests and deploys applications.
 2. **What is a stage?** A logical boundary in a pipeline (Build, Test, DEV, PROD) that runs sequentially by default and can have conditions and approvals.
@@ -1654,7 +1663,7 @@ Waiting because of: **approval pending**, **environment check failed** (branch c
 11. **What are conditions?** Expressions that decide whether a stage/job/step runs. The default is `succeeded()`.
 12. **`succeeded()`, `failed()`, `always()`?** Run if all dependencies succeeded / if one failed / always (even if canceled, so good for cleanup).
 
-## 22.2 Variables
+### Variables
 
 13. **What are pipeline variables?** Named values used across the pipeline, referenced like `$(name)`.
 14. **Variable vs parameter?** A variable is a runtime configuration value. A parameter is a typed pipeline/template input evaluated at compile time that can change the pipeline's structure.
@@ -1664,7 +1673,7 @@ Waiting because of: **approval pending**, **environment check failed** (branch c
 18. **What are runtime variables?** Values supplied or set when a pipeline runs (queue-time variables, output variables from tasks).
 19. **`$(var)` vs `${{ }}` vs `$[ ]`?** `$(var)` = macro at runtime before a task runs. `${{ }}` = template expression at compile time. `$[ ]` = runtime expression, used for conditions and computed values.
 
-## 22.3 Environments
+### Environments
 
 20. **What is an Environment?** A deployment target/boundary (DEV, QA, PROD) that gives deployment history, permissions, approvals and checks.
 21. **What is a deployment job?** A special job that deploys to an environment, auto-downloads artifacts and supports strategies (runOnce, rolling, canary).
@@ -1673,7 +1682,7 @@ Waiting because of: **approval pending**, **environment check failed** (branch c
 24. **What are checks?** Automated gates: branch control, business hours, exclusive lock, required template, REST/Azure Function, Azure Monitor alerts.
 25. **How do environment permissions work?** Roles (Administrator, User, Creator, Reader) control who can use or manage the environment, giving separation of duties.
 
-## 22.4 Agents
+### Agents
 
 26. **What is an agent?** The machine that runs a pipeline's jobs.
 27. **Microsoft-hosted vs self-hosted?** Microsoft-hosted: Microsoft manages a fresh VM per job. Self-hosted: you manage it and can access private networks and custom tools.
@@ -1683,7 +1692,7 @@ Waiting because of: **approval pending**, **environment check failed** (branch c
 31. **How do you register a self-hosted agent?** Create a pool, download the agent, run `config.sh` with URL, pool and auth, then install it as a service.
 32. **How do you secure self-hosted agents?** Patch, least privilege, no stored secrets, restricted network, separate prod pools, ephemeral agents, restrict who can use the pool, no untrusted/fork pipelines.
 
-## 22.5 Service connections
+### Service connections
 
 33. **What is a service connection?** An authenticated connection from Azure DevOps to an external service so pipelines can use it.
 34. **What is an ARM service connection?** A service connection that lets pipelines manage Azure resources in a subscription/resource group via Entra ID.
@@ -1694,7 +1703,7 @@ Waiting because of: **approval pending**, **environment check failed** (branch c
 39. **Authentication vs authorization?** Authentication = who you are (Entra ID). Authorization = what you can do (Azure RBAC).
 40. **How do you implement least privilege?** A dedicated identity per environment, a minimum RBAC role at the narrowest scope, no "all pipelines" access, and approvals/checks on the production connection.
 
-## 22.6 Extra
+### Extra
 
 41. **Why can't I use `pr:` in Azure Repos?** For Azure Repos Git, PR validation is configured in branch policies (build validation). `pr:` applies to GitHub/Bitbucket.
 42. **Why is my secret empty in a script?** Secrets aren't exposed as environment variables automatically. Map with `env:`.
@@ -1704,7 +1713,7 @@ Waiting because of: **approval pending**, **environment check failed** (branch c
 
 ---
 
-# 23. Final Memory Map
+## A23. Final Memory Map
 
 ```text
                     AZURE PIPELINES
@@ -1733,7 +1742,7 @@ Waiting because of: **approval pending**, **environment check failed** (branch c
                               Entra ID → Azure RBAC → Azure / AKS / VM
 ```
 
-## 🔴 15 things to memorize first
+### 🔴 15 things to memorize first
 
 ```text
 1. Pipeline → Stage → Job → Step → Task
@@ -1760,3 +1769,2801 @@ Waiting because of: **approval pending**, **environment check failed** (branch c
 ### ⭐ Senior-level answer: *"How would you design a secure Azure DevOps CI/CD pipeline?"*
 
 > **I would keep the source in Azure Repos with protected branches and PR validation, and use a multi-stage YAML pipeline that builds, tests and runs security checks, publishes an immutable artifact (or image to ACR), and promotes that same artifact through DEV, QA and PROD. I'd use templates, ideally shared and versioned with `extends`, for reusable logic, variable groups for configuration, and Key Vault for secrets, never storing secrets in YAML. Deployments go through Azure DevOps Environments with approvals and checks. For Azure access I'd use a service connection with workload identity federation instead of a client secret, scoped to the minimum Azure RBAC role per environment, and I'd use self-hosted agents inside the VNet only when private network access is required, kept ephemeral and locked down.**
+
+---
+
+# PART B: Azure DevOps & Azure Pipelines — Complete Interview Notes
+
+(Fundamentals through production-level concepts, told with analogies, interview phrasing, and explicit "don't say this / say this instead" guidance. Some topics overlap with Part A — read Part A for the detailed reference tables, and Part B for how to phrase answers out loud.)
+
+## B1. Azure DevOps — What is it?
+
+### Definition
+
+**Azure DevOps** is Microsoft's DevOps platform used to implement the complete software delivery lifecycle:
+
+```text
+Plan
+  ↓
+Code
+  ↓
+Build
+  ↓
+Test
+  ↓
+Security
+  ↓
+Package
+  ↓
+Deploy
+  ↓
+Monitor
+```
+
+### Major Azure DevOps services
+
+| Service | Purpose |
+|---|---|
+| Azure Boards | Work items, bugs, stories, sprint planning |
+| Azure Repos | Git repositories |
+| Azure Pipelines | CI/CD |
+| Azure Test Plans | Testing |
+| Azure Artifacts | Package/artifact management |
+
+### Interview answer
+
+> "Azure DevOps is a Microsoft DevOps platform that provides services for planning, source-code management, CI/CD, testing and artifact management. In my DevOps role, the most relevant components are Azure Repos and Azure Pipelines for source control and automated CI/CD."
+
+---
+
+## B2. Azure Pipeline
+
+### What is Azure Pipeline?
+
+Azure Pipelines is the **CI/CD engine** of Azure DevOps.
+
+It automates:
+
+```text
+Developer
+   ↓
+Git Push
+   ↓
+Pipeline Trigger
+   ↓
+Build
+   ↓
+Test
+   ↓
+Security Scan
+   ↓
+Artifact / Docker Image
+   ↓
+Deploy
+```
+
+### CI
+
+Continuous Integration means:
+
+> Automatically build and test code whenever developers make changes.
+
+### CD
+
+Continuous Delivery/Deployment means:
+
+> Automatically or semi-automatically deploy the validated application to environments.
+
+---
+
+## B3. Azure Pipeline Architecture
+
+```text
+                         Azure DevOps
+                              |
+                +-------------+-------------+
+                |                           |
+          Azure Repos                  Azure Pipelines
+                |                           |
+             Git Push                      |
+                |                           |
+                +---------- Trigger --------+
+                              |
+                         YAML Pipeline
+                              |
+          +-------------------+-------------------+
+          |                   |                   |
+       Variables          Resources            Parameters
+          |                   |                   |
+          +-------------------+-------------------+
+                              |
+                           Stages
+                              |
+                    +---------+---------+
+                    |                   |
+                  Build               Test
+                    |                   |
+                  Jobs                Jobs
+                    |                   |
+                 Steps               Steps
+                    |                   |
+             +------+-----+       +-----+------+
+             |            |       |            |
+           Task         Script   Task        Script
+                              |
+                            Agent
+                              |
+                       Self-hosted VM
+                              |
+                +-------------+-------------+
+                |             |             |
+              Docker      Terraform      kubectl
+```
+
+### Most important hierarchy
+
+```text
+Pipeline
+   ↓
+Stage
+   ↓
+Job
+   ↓
+Step
+   ↓
+Task / Script
+```
+
+### Important interview correction
+
+**Agent is NOT another level in the hierarchy.**
+
+The agent is the machine/environment where the job executes.
+
+```text
+Job
+ ↓
+Pool
+ ↓
+Agent
+```
+
+---
+
+## B4. YAML Pipeline
+
+Azure Pipelines can be defined as code using YAML.
+
+Example:
+
+```yaml
+trigger:
+- main
+
+pool:
+  vmImage: ubuntu-latest
+
+stages:
+
+- stage: Build
+
+  jobs:
+
+  - job: BuildApplication
+
+    steps:
+
+    - script: |
+        echo "Building application"
+        echo "Running tests"
+```
+
+### Why YAML?
+
+Because pipeline configuration becomes:
+
+- version controlled
+- reviewable
+- reusable
+- auditable
+- easy to reproduce
+
+### Interview answer
+
+> "I prefer YAML pipelines because pipeline configuration is treated as code. We can version it with Git, review changes through pull requests, reuse templates and maintain multi-stage CI/CD pipelines."
+
+---
+
+## B5. Classic Pipeline vs YAML Pipeline
+
+### Classic
+
+Configured through UI.
+
+```text
+Azure DevOps UI
+      ↓
+Build configuration
+      ↓
+Release configuration
+```
+
+### YAML
+
+Configuration stored in repository.
+
+```text
+Git
+ ↓
+azure-pipelines.yml
+ ↓
+Pipeline
+```
+
+### YAML advantages
+
+- Git versioning
+- PR review
+- templates
+- reusable pipelines
+- infrastructure-as-code approach
+- easier auditing
+
+### Interview recommendation
+
+If asked:
+
+> Which one do you prefer?
+
+Say:
+
+> "For new implementations, I prefer YAML pipelines because pipeline configuration is version controlled and can be reviewed like application code."
+
+### Avoid saying
+
+❌ "Classic pipelines are useless."
+
+Instead:
+
+> "Classic pipelines can still exist in legacy environments, but for new implementations I generally prefer YAML."
+
+---
+
+## B6. Trigger
+
+A trigger determines:
+
+> **When should the pipeline start?**
+
+### CI trigger
+
+```yaml
+trigger:
+- main
+```
+
+Meaning:
+
+```text
+Developer
+   ↓
+Push to main
+   ↓
+Pipeline starts
+```
+
+### Multiple branches
+
+```yaml
+trigger:
+  branches:
+    include:
+    - main
+    - develop
+```
+
+### Exclude branch
+
+```yaml
+trigger:
+  branches:
+    exclude:
+    - feature/*
+```
+
+### Path trigger
+
+Only run pipeline when specific files change.
+
+```yaml
+trigger:
+  paths:
+    include:
+    - application/*
+```
+
+Example:
+
+```text
+application/
+    app.py
+
+documentation/
+    README.md
+```
+
+Changing README doesn't need application build.
+
+### PR trigger
+
+Conceptually:
+
+```text
+Feature branch
+     ↓
+Pull Request
+     ↓
+Validation pipeline
+     ↓
+Build + Test + Security
+     ↓
+Merge
+```
+
+Example syntax where supported:
+
+```yaml
+pr:
+- main
+```
+
+### Important interview nuance
+
+Don't blindly say:
+
+> "`pr:` works the same way for every Git provider."
+
+Trigger behavior depends on the repository/provider configuration. (See Part A, Section A4 — for **Azure Repos Git**, PR validation is configured through **branch policy build validation**, not `pr:`.)
+
+---
+
+## B7. Scheduled Trigger
+
+Example:
+
+```yaml
+schedules:
+- cron: "0 2 * * *"
+  displayName: Nightly Build
+  branches:
+    include:
+    - main
+```
+
+Useful for:
+
+- nightly security scans
+- dependency checks
+- scheduled tests
+- maintenance jobs
+
+---
+
+## B8. Pipeline Completion Trigger
+
+One pipeline can start after another pipeline completes.
+
+Architecture:
+
+```text
+Build Pipeline
+      ↓
+Build artifact
+      ↓
+Deployment Pipeline
+```
+
+This is commonly handled through **pipeline resources**.
+
+---
+
+## B9. Resources
+
+## What are resources?
+
+Resources are external things that the pipeline consumes or depends on.
+
+Examples:
+
+```text
+Resources
+   |
+   +-- Pipelines
+   |
+   +-- Repositories
+   |
+   +-- Containers
+   |
+   +-- Packages
+```
+
+Example:
+
+```yaml
+resources:
+  pipelines:
+  - pipeline: appBuild
+    source: Application-Build
+```
+
+Meaning:
+
+> This pipeline consumes another pipeline's output.
+
+### Repository resource
+
+```yaml
+resources:
+  repositories:
+  - repository: templates
+    type: git
+    name: DevOps/SharedTemplates
+```
+
+Useful for centralized templates.
+
+### Container resource
+
+Conceptually:
+
+```yaml
+resources:
+  containers:
+  - container: mycontainer
+    image: myregistry/myapp:latest
+```
+
+---
+
+## B10. Variables
+
+Variables store values that can change.
+
+Example:
+
+```yaml
+variables:
+  appName: myapp
+  environment: dev
+```
+
+Use:
+
+```yaml
+- script: |
+    echo "Application: $(appName)"
+    echo "Environment: $(environment)"
+```
+
+---
+
+## B11. Why variables?
+
+Instead of:
+
+```yaml
+docker build -t myapp:dev .
+```
+
+Use:
+
+```yaml
+variables:
+  imageName: myapp
+  environment: dev
+```
+
+Then:
+
+```yaml
+docker build -t $(imageName):$(environment) .
+```
+
+Benefits:
+
+- easier maintenance
+- environment-specific configuration
+- reusable pipeline
+
+---
+
+## B12. Types of Variables
+
+### YAML variables
+
+```yaml
+variables:
+  appName: myapp
+```
+
+### UI variables
+
+Configured in Azure DevOps.
+
+### Variable groups
+
+Centralized variables.
+
+Example concept:
+
+```text
+Variable Group
+      |
+      +-- dev configuration
+      +-- QA configuration
+      +-- common configuration
+```
+
+### Secret variables
+
+Used for sensitive values.
+
+Example:
+
+```text
+DB_PASSWORD
+API_TOKEN
+```
+
+### Important
+
+Don't put secrets directly in YAML.
+
+❌ Bad:
+
+```yaml
+variables:
+  password: MyPassword123
+```
+
+Better:
+
+```text
+Secret Store
+     ↓
+Variable / Secret integration
+     ↓
+Pipeline
+```
+
+For production, use Azure Key Vault or another appropriate secret-management solution.
+
+---
+
+## B13. Variables vs Parameters
+
+This is a common interview question.
+
+### Variables
+
+Generally runtime/configuration values.
+
+```yaml
+variables:
+  environment: dev
+```
+
+Use:
+
+```yaml
+$(environment)
+```
+
+### Parameters
+
+Used more for pipeline structure and compile-time choices.
+
+Conceptually:
+
+```yaml
+parameters:
+- name: environment
+  type: string
+  default: dev
+```
+
+Use:
+
+```yaml
+${{ parameters.environment }}
+```
+
+### Memory trick
+
+```text
+Parameter → Pipeline design/choice
+Variable  → Runtime/configuration value
+```
+
+---
+
+## B14. Agent
+
+An agent is the machine that executes pipeline jobs.
+
+Example:
+
+```text
+Azure Pipeline
+      ↓
+Job
+      ↓
+Agent
+      ↓
+Commands execute here
+```
+
+---
+
+## B15. Microsoft-hosted Agent
+
+Example:
+
+```yaml
+pool:
+  vmImage: ubuntu-latest
+```
+
+Microsoft provides the VM.
+
+Advantages:
+
+- no VM management
+- clean environment
+- easy setup
+- common tools already available
+
+---
+
+## B16. Self-hosted Agent
+
+You manage the machine.
+
+Architecture:
+
+```text
+Azure DevOps
+      |
+  Agent Pool
+      |
+Self-hosted Agent
+      |
+Ubuntu VM
+      |
++-----+------+-------+-------+
+|            |       |       |
+Docker   Terraform kubectl Helm
+```
+
+Useful when:
+
+- private network access is required
+- custom software is required
+- special tools are needed
+- internal infrastructure must be accessed
+- compliance requires controlled build infrastructure
+
+---
+
+## B17. Self-hosted Agent Setup
+
+Typical flow:
+
+```text
+Azure DevOps
+    ↓
+Organization Settings
+    ↓
+Agent Pools
+    ↓
+Create Pool
+    ↓
+Add Agent
+    ↓
+Download Agent
+    ↓
+Configure Agent
+    ↓
+Install as Service
+    ↓
+Start Agent
+    ↓
+Agent becomes Online
+```
+
+Typical Linux configuration commands:
+
+```bash
+./config.sh
+```
+
+Then:
+
+```bash
+sudo ./svc.sh install
+sudo ./svc.sh start
+sudo ./svc.sh status
+```
+
+Pipeline:
+
+```yaml
+pool:
+  name: my-linux-agents
+```
+
+Test:
+
+```yaml
+steps:
+- script: |
+    hostname
+    uname -a
+    docker --version
+    terraform version
+```
+
+---
+
+## B18. Do we need to install tools on Self-hosted Agent?
+
+### YES.
+
+This is very important.
+
+If pipeline executes:
+
+```bash
+docker build .
+```
+
+the agent needs Docker.
+
+If:
+
+```bash
+terraform plan
+```
+
+the agent needs Terraform.
+
+If:
+
+```bash
+kubectl get pods
+```
+
+the agent needs kubectl.
+
+Typical DevOps self-hosted agent:
+
+```text
+Ubuntu VM
+│
+├── Azure DevOps Agent
+├── Git
+├── Docker
+├── Terraform
+├── kubectl
+├── Helm
+├── Azure CLI
+├── Python
+├── Node.js
+└── Security tools
+```
+
+Otherwise:
+
+```text
+terraform: command not found
+```
+
+or:
+
+```text
+docker: command not found
+```
+
+### Interview answer
+
+> "With self-hosted agents, we are responsible for maintaining the required toolchain, OS patches, security and agent health. With Microsoft-hosted agents, Microsoft manages the underlying VM and provides a predefined software environment."
+
+---
+
+## B19. Golden Image — Production Best Practice
+
+Instead of manually installing tools on every agent:
+
+```text
+Golden VM Image
+       |
+       +-- Git
+       +-- Docker
+       +-- Terraform
+       +-- kubectl
+       +-- Helm
+       +-- Azure CLI
+       |
+       ↓
+Self-hosted agents
+```
+
+This gives consistency.
+
+For larger organizations, ephemeral agents are also useful:
+
+```text
+Job starts
+   ↓
+Fresh agent
+   ↓
+Build
+   ↓
+Test
+   ↓
+Destroy agent
+```
+
+Benefits:
+
+- clean environment
+- less contamination
+- better isolation
+- reproducibility
+
+---
+
+## B20. Stage
+
+Stage represents a major phase of pipeline execution.
+
+Example:
+
+```text
+Build
+  ↓
+Test
+  ↓
+Security
+  ↓
+Deploy-Dev
+  ↓
+Deploy-QA
+  ↓
+Deploy-Prod
+```
+
+YAML:
+
+```yaml
+stages:
+
+- stage: Build
+
+- stage: Test
+
+- stage: Security
+
+- stage: DeployDev
+
+- stage: DeployProd
+```
+
+---
+
+## B21. Job
+
+A job is a group of steps executed together on an agent.
+
+```text
+Stage
+  ↓
+Job
+  ↓
+Steps
+```
+
+Example:
+
+```yaml
+jobs:
+
+- job: Build
+  steps:
+
+  - script: echo "Build"
+
+  - script: echo "Test"
+```
+
+Multiple jobs can run in parallel.
+
+```text
+            Stage
+              |
+       +------+------+
+       |             |
+    Job A          Job B
+       |             |
+    Tests         Security
+```
+
+---
+
+## B22. Step
+
+A step is an individual operation.
+
+Example:
+
+```yaml
+steps:
+
+- script: echo "Install"
+
+- script: echo "Build"
+
+- script: echo "Test"
+```
+
+---
+
+## B23. Task
+
+A task is a predefined Azure Pipelines action.
+
+Examples:
+
+```yaml
+- task: Docker@2
+```
+
+```yaml
+- task: AzureCLI@2
+```
+
+```yaml
+- task: KubernetesManifest@1
+```
+
+Tasks simplify common operations.
+
+---
+
+## B24. Script
+
+A script executes shell commands.
+
+Example:
+
+```yaml
+- script: |
+    echo "Hello"
+    docker --version
+    terraform version
+```
+
+Linux-specific:
+
+```yaml
+- bash: |
+    echo "Running Bash"
+```
+
+PowerShell:
+
+```yaml
+- powershell: |
+    Write-Host "Running PowerShell"
+```
+
+---
+
+## B25. Task vs Script
+
+Very important interview question.
+
+### Task
+
+```yaml
+- task: Docker@2
+  inputs:
+    command: build
+    repository: myapp
+    Dockerfile: Dockerfile
+```
+
+### Script
+
+```yaml
+- script: |
+    docker build -t myapp .
+```
+
+### Task advantages
+
+- standardized
+- Azure DevOps integration
+- easier configuration
+- service connection integration
+- less custom scripting
+
+### Script advantages
+
+- maximum CLI flexibility
+- custom logic
+- useful when no suitable built-in task exists
+
+### Best interview answer
+
+> "I prefer a built-in task when it provides the functionality I need because it gives standardized Azure DevOps integration. I use scripts when I need custom CLI logic or when an appropriate task is unavailable."
+
+### Don't say
+
+❌ "Tasks are always better."
+
+or
+
+❌ "Scripts are always better."
+
+---
+
+## B26. Docker@2
+
+Example:
+
+```yaml
+- task: Docker@2
+  inputs:
+    command: build
+    repository: myapp
+    Dockerfile: '**/Dockerfile'
+    tags: |
+      $(Build.BuildId)
+```
+
+Docker workflow:
+
+```text
+Source Code
+    ↓
+Dockerfile
+    ↓
+Docker Build
+    ↓
+Docker Image
+    ↓
+Security Scan
+    ↓
+Registry
+```
+
+---
+
+## B27. Docker Build using Script
+
+```yaml
+- script: |
+    docker build \
+      -t myapp:$(Build.BuildId) \
+      .
+```
+
+Push:
+
+```bash
+docker push myregistry/myapp:123
+```
+
+---
+
+## B28. Build Once, Deploy Many
+
+One of the most important DevOps principles.
+
+Bad approach:
+
+```text
+Build DEV
+   ↓
+Build QA
+   ↓
+Build PROD
+```
+
+Potential problem:
+
+Different builds can produce different artifacts.
+
+Better:
+
+```text
+             Build
+               |
+          Docker Image
+               |
+        Security Scan
+               |
+          Same Artifact
+          /     |      \
+       DEV      QA      PROD
+```
+
+Example:
+
+```text
+myapp:1.25
+```
+
+Same image should move through environments.
+
+### Interview answer
+
+> "I prefer build-once-deploy-many because the exact artifact tested in lower environments should be promoted to production rather than rebuilding it separately."
+
+---
+
+## B29. dependsOn
+
+Controls execution dependency.
+
+Example:
+
+```yaml
+- stage: Test
+  dependsOn: Build
+```
+
+Means:
+
+```text
+Build
+  ↓
+Test
+```
+
+Multiple dependencies:
+
+```yaml
+- stage: Deploy
+  dependsOn:
+  - Build
+  - Security
+  - Test
+```
+
+Architecture:
+
+```text
+Build ─────┐
+           |
+Test ──────┼──→ Deploy
+           |
+Security ──┘
+```
+
+---
+
+## B30. Conditions
+
+Dependencies answer:
+
+> What must complete first?
+
+Conditions answer:
+
+> Under what condition should this execute?
+
+Example:
+
+```yaml
+condition: succeeded()
+```
+
+Common concepts:
+
+```text
+succeeded()
+failed()
+always()
+succeededOrFailed()
+```
+
+Example:
+
+```yaml
+- script: echo "Cleanup"
+  condition: always()
+```
+
+Useful for:
+
+- cleanup
+- notifications
+- failure handling
+
+---
+
+## B31. Pipeline Flow Example
+
+A real-world DevOps pipeline:
+
+```text
+Developer
+   |
+   | git push
+   ↓
+Azure Repos
+   |
+   ↓
+Trigger
+   |
+   ↓
+Build Stage
+   |
+   +--> Checkout
+   +--> Install dependencies
+   +--> Build
+   |
+   ↓
+Test Stage
+   |
+   +--> Unit Test
+   +--> Integration Test
+   |
+   ↓
+Security Stage
+   |
+   +--> SAST
+   +--> Dependency Scan
+   +--> Secret Scan
+   +--> Container Scan
+   |
+   ↓
+Artifact
+   |
+   ↓
+Deploy DEV
+   |
+   ↓
+Validation
+   |
+   ↓
+Approval
+   |
+   ↓
+Deploy QA
+   |
+   ↓
+Approval
+   |
+   ↓
+Deploy PROD
+```
+
+---
+
+## B32. Service Connection
+
+Very important interview topic.
+
+### What is it?
+
+A service connection provides authenticated access from Azure DevOps to an external service/resource.
+
+Architecture:
+
+```text
+Azure Pipeline
+      |
+      ↓
+Service Connection
+      |
+      ↓
+Authentication
+      |
+      ↓
+Azure / ACR / Kubernetes / Other Resource
+```
+
+---
+
+## B33. Why Service Connection?
+
+Without proper authentication:
+
+```text
+Pipeline
+   ↓
+?????
+   ↓
+Azure
+```
+
+With service connection:
+
+```text
+Pipeline
+   ↓
+Service Connection
+   ↓
+Secure Authentication
+   ↓
+Azure Resource
+```
+
+---
+
+## B34. Don't hardcode credentials
+
+Bad:
+
+```yaml
+- script: |
+    az login \
+      --username admin \
+      --password MyPassword
+```
+
+Never do this.
+
+Better:
+
+```text
+Pipeline
+   ↓
+Service Connection
+   ↓
+Federated/service authentication
+   ↓
+Azure
+```
+
+Use least privilege.
+
+---
+
+## B35. Modern Authentication
+
+For supported scenarios, prefer **workload identity federation/OIDC** rather than long-lived client secrets.
+
+Concept:
+
+```text
+Azure DevOps
+     ↓
+Short-lived identity/token
+     ↓
+Azure
+```
+
+Instead of:
+
+```text
+Azure DevOps
+     ↓
+Long-lived secret
+     ↓
+Azure
+```
+
+### Interview answer
+
+> "I prefer workload identity federation where supported because it avoids storing long-lived client secrets and reduces credential-management risk."
+
+---
+
+## B36. Terraform CI/CD
+
+This is highly relevant to your DevOps profile.
+
+Architecture:
+
+```text
+Developer
+   ↓
+Git
+   ↓
+Azure Pipeline
+   ↓
+Security
+   |
+   +--> Gitleaks
+   +--> TFSec
+   +--> TFLint
+   |
+   ↓
+Terraform
+   |
+   +--> fmt
+   +--> init
+   +--> validate
+   +--> plan
+   |
+   ↓
+Review / Approval
+   ↓
+terraform apply
+```
+
+---
+
+## B37. Terraform Commands
+
+Formatting:
+
+```bash
+terraform fmt -check
+```
+
+Initialization:
+
+```bash
+terraform init
+```
+
+Validation:
+
+```bash
+terraform validate
+```
+
+Plan:
+
+```bash
+terraform plan
+```
+
+Apply:
+
+```bash
+terraform apply
+```
+
+Destroy:
+
+```bash
+terraform destroy
+```
+
+---
+
+## B38. Terraform YAML Example
+
+```yaml
+stages:
+
+- stage: Validate
+
+  jobs:
+  - job: TerraformValidate
+
+    steps:
+
+    - script: terraform fmt -check
+
+    - script: terraform init
+
+    - script: terraform validate
+
+
+- stage: Plan
+
+  dependsOn: Validate
+
+  jobs:
+  - job: TerraformPlan
+
+    steps:
+
+    - script: terraform plan
+
+
+- stage: Apply
+
+  dependsOn: Plan
+
+  jobs:
+  - job: TerraformApply
+
+    steps:
+
+    - script: terraform apply
+```
+
+### Production improvement
+
+Don't blindly use:
+
+```bash
+terraform apply -auto-approve
+```
+
+for production.
+
+Prefer:
+
+```text
+Plan
+ ↓
+Review
+ ↓
+Approval
+ ↓
+Apply
+```
+
+---
+
+## B39. DevSecOps Pipeline
+
+A strong interview architecture:
+
+```text
+                 Git Push
+                    |
+                    ↓
+             Secret Scanning
+                Gitleaks
+                    |
+                    ↓
+              IaC Security
+                 TFSec
+                    |
+                    ↓
+              TFLint
+                    |
+                    ↓
+          Terraform fmt/validate
+                    |
+                    ↓
+               Terraform Plan
+                    |
+                    ↓
+              PR Review
+                    |
+                    ↓
+            Manual Approval
+                    |
+                    ↓
+             Terraform Apply
+```
+
+### Why security early?
+
+Because:
+
+```text
+Early detection = cheaper fix
+Late detection = expensive fix
+```
+
+---
+
+## B40. Branch Protection
+
+Production repository should not allow:
+
+```text
+Developer
+    |
+    +------ direct push ------> main
+```
+
+Better:
+
+```text
+Developer
+    ↓
+Feature Branch
+    ↓
+Pull Request
+    ↓
+Code Review
+    ↓
+Build Validation
+    ↓
+Security Scan
+    ↓
+Approval
+    ↓
+Merge main
+```
+
+Typical branch policies:
+
+- PR required
+- reviewer approval
+- build validation
+- no direct push
+- linked work item if required
+- minimum reviewers
+- security checks
+
+---
+
+## B41. Templates
+
+Templates provide reusable pipeline code.
+
+Example:
+
+```text
+templates/
+   |
+   ├── terraform.yml
+   ├── docker.yml
+   ├── security.yml
+   └── deploy.yml
+```
+
+Pipeline:
+
+```yaml
+steps:
+- template: templates/docker.yml
+```
+
+---
+
+## B42. Why Templates?
+
+Imagine 20 microservices.
+
+Without templates:
+
+```text
+20 YAML files
+20 copies of same logic
+20 places to maintain
+```
+
+With templates:
+
+```text
+              Shared Template
+                    |
+        +-----------+-----------+
+        |           |           |
+      App1        App2        App3
+```
+
+Change once → many pipelines benefit.
+
+### Similar concept from Jenkins
+
+```text
+Jenkins
+   ↓
+Shared Library
+```
+
+Azure:
+
+```text
+Azure Pipelines
+   ↓
+YAML Templates
+```
+
+---
+
+## B43. Parameterized Pipeline
+
+Instead of separate pipelines:
+
+```text
+dev-pipeline.yml
+qa-pipeline.yml
+prod-pipeline.yml
+```
+
+Use one reusable pipeline with parameters.
+
+Concept:
+
+```text
+             One Pipeline
+                  |
+        +---------+---------+
+        |         |         |
+       DEV       QA       PROD
+```
+
+This reduces duplication.
+
+---
+
+## B44. Environment
+
+An environment represents a deployment target.
+
+Examples:
+
+```text
+dev
+qa
+uat
+prod
+```
+
+Architecture:
+
+```text
+Pipeline
+   |
+   +--> DEV
+   |
+   +--> QA
+   |
+   +--> PROD
+```
+
+Environments can be associated with deployment controls such as approvals/checks.
+
+---
+
+## B45. Approval
+
+Production deployment should generally have stronger controls.
+
+Example:
+
+```text
+Build
+ ↓
+Test
+ ↓
+Security
+ ↓
+Deploy DEV
+ ↓
+Deploy QA
+ ↓
+Manual Approval
+ ↓
+PROD
+```
+
+### Interview answer
+
+> "For production, I would separate build validation from deployment authorization and use environment-based approvals/checks rather than allowing an unrestricted production deployment."
+
+---
+
+## B46. Artifacts
+
+Artifacts are outputs produced by the build.
+
+Examples:
+
+```text
+JAR
+WAR
+ZIP
+Python package
+Docker image
+Terraform plan
+```
+
+Architecture:
+
+```text
+Source
+  ↓
+Build
+  ↓
+Artifact
+  ↓
+Store
+  ↓
+Deploy
+```
+
+---
+
+## B47. Docker Registry / ACR
+
+Typical flow:
+
+```text
+Git
+ ↓
+Pipeline
+ ↓
+Docker Build
+ ↓
+Security Scan
+ ↓
+Azure Container Registry
+ ↓
+AKS
+```
+
+Example concept:
+
+```bash
+docker build -t myapp:123 .
+docker push registry/myapp:123
+```
+
+---
+
+## B48. Kubernetes Deployment
+
+Typical Azure architecture:
+
+```text
+Azure DevOps
+     |
+     ↓
+Docker Build
+     |
+     ↓
+ACR
+     |
+     ↓
+AKS
+     |
+     ↓
+Kubernetes Deployment
+```
+
+Pipeline may use:
+
+```yaml
+- task: KubernetesManifest@1
+```
+
+or:
+
+```bash
+kubectl apply -f deployment.yaml
+```
+
+---
+
+## B49. Helm
+
+Instead of maintaining many raw Kubernetes YAML files:
+
+```text
+Helm Chart
+   |
+   +-- deployment.yaml
+   +-- service.yaml
+   +-- ingress.yaml
+   +-- values.yaml
+```
+
+Pipeline:
+
+```text
+Build
+ ↓
+Docker Image
+ ↓
+Push ACR
+ ↓
+Helm Upgrade
+ ↓
+AKS
+```
+
+Typical command:
+
+```bash
+helm upgrade --install myapp ./helm-chart
+```
+
+---
+
+## B50. Conditions vs dependsOn
+
+Remember this distinction.
+
+### dependsOn
+
+Controls dependency.
+
+```yaml
+dependsOn: Build
+```
+
+Meaning:
+
+```text
+Build → Test
+```
+
+### condition
+
+Controls whether something executes.
+
+```yaml
+condition: succeeded()
+```
+
+Meaning:
+
+> Run only if previous dependency succeeded.
+
+---
+
+## B51. Matrix Strategy
+
+Useful when testing multiple versions/platforms.
+
+Concept:
+
+```text
+              Test
+          /     |     \
+       Python3.9  3.10  3.11
+```
+
+This allows parallel testing.
+
+Interview point:
+
+> "Matrix strategies are useful when the same job needs to execute against multiple versions or configurations."
+
+---
+
+## B52. Caching
+
+Caching can reduce pipeline execution time.
+
+Example:
+
+```text
+First build
+   ↓
+Download dependencies
+   ↓
+Cache
+```
+
+Next build:
+
+```text
+Pipeline
+   ↓
+Cache hit
+   ↓
+Faster build
+```
+
+Useful for:
+
+- npm
+- Maven
+- Python packages
+- Gradle
+- other dependency-heavy builds
+
+---
+
+## B53. Pipeline Performance
+
+If pipeline takes 45 minutes and you need to reduce it:
+
+Look at:
+
+```text
+1. Parallel jobs
+2. Dependency caching
+3. Incremental builds
+4. Docker layer caching
+5. Smaller Docker images
+6. Avoid unnecessary checkout/build
+7. Reusable artifacts
+8. Faster agents
+```
+
+### Interview scenario
+
+> "How would you optimize a slow pipeline?"
+
+Answer:
+
+> "First I would identify the bottleneck using pipeline execution timing. Then I would evaluate parallelization, dependency caching, Docker layer reuse, unnecessary steps, agent performance and artifact reuse rather than blindly increasing compute resources."
+
+---
+
+## B54. Secrets Management
+
+Never:
+
+```yaml
+password: admin123
+```
+
+Never:
+
+```bash
+echo "$PASSWORD"
+```
+
+if it risks exposing the secret.
+
+Prefer:
+
+```text
+Azure Key Vault
+      ↓
+Secret
+      ↓
+Secure pipeline integration
+      ↓
+Application
+```
+
+Also:
+
+- don't print secrets
+- don't commit secrets
+- don't put credentials in Dockerfiles
+- don't put credentials in Git
+- rotate credentials
+- use least privilege
+
+---
+
+## B55. Security Pipeline
+
+A mature pipeline:
+
+```text
+Git Push
+   ↓
+Gitleaks
+   ↓
+SAST
+   ↓
+Dependency Scan
+   ↓
+IaC Scan
+   ↓
+Docker Image Scan
+   ↓
+Build
+   ↓
+Test
+   ↓
+Artifact
+   ↓
+Deploy
+```
+
+Potential tools:
+
+```text
+Gitleaks
+TFLint
+TFSec
+Trivy
+SonarQube
+Checkmarx
+Black Duck
+```
+
+Given your existing experience, you can connect this directly to your Jenkins work.
+
+---
+
+## B56. Azure Pipeline vs Jenkins
+
+Very common interview question.
+
+| Jenkins | Azure DevOps |
+|---|---|
+| Jenkinsfile | azure-pipelines.yml |
+| Agent | Agent |
+| Shared Library | YAML Template |
+| Credentials | Service Connection |
+| Plugins | Tasks/Extensions |
+| Jenkins Controller | Azure DevOps service |
+| Pipeline | Pipeline |
+| Stage | Stage |
+| Job | Job |
+
+### Strong interview answer
+
+> "The concepts are very similar. In Jenkins I work with Jenkinsfiles, agents, credentials and shared libraries. In Azure Pipelines the equivalent concepts are YAML pipelines, agents, service connections and reusable templates. The biggest difference is that Azure DevOps provides a more integrated platform around repos, pipelines, boards and artifacts."
+
+---
+
+## B57. Azure Pipeline vs GitHub Actions
+
+| Azure DevOps | GitHub Actions |
+|---|---|
+| YAML pipeline | Workflow YAML |
+| Agent | Runner |
+| Service connection | Secrets/OIDC/integrations |
+| Task | Action |
+| Environment | Environment |
+| Template | Reusable workflow/action |
+
+Conceptually:
+
+```text
+Azure DevOps
+     ↓
+Pipeline
+     ↓
+Agent
+```
+
+GitHub:
+
+```text
+GitHub
+  ↓
+Workflow
+  ↓
+Runner
+```
+
+---
+
+## B58. Complete Real-World Example
+
+Suppose your company has:
+
+```text
+50+ microservices
+AWS/Azure
+Docker
+Kubernetes
+Terraform
+Git
+```
+
+Pipeline:
+
+```text
+Developer
+    |
+    ↓
+Feature Branch
+    |
+    ↓
+Pull Request
+    |
+    ↓
+Build Validation
+    |
+    +---- Unit Test
+    +---- SonarQube
+    +---- Gitleaks
+    +---- Dependency Scan
+    |
+    ↓
+Merge Main
+    |
+    ↓
+Build
+    |
+    ↓
+Docker Image
+    |
+    ↓
+Trivy Scan
+    |
+    ↓
+Container Registry
+    |
+    ↓
+Deploy DEV
+    |
+    ↓
+Smoke Test
+    |
+    ↓
+Deploy QA
+    |
+    ↓
+Approval
+    |
+    ↓
+Deploy PROD
+```
+
+This is the type of architecture you should be able to explain in an interview.
+
+---
+
+## B59. Complete YAML Example
+
+A simplified production-style structure:
+
+```yaml
+trigger:
+  branches:
+    include:
+    - main
+
+variables:
+  appName: myapp
+  imageTag: $(Build.BuildId)
+
+stages:
+
+# -------------------------
+# BUILD
+# -------------------------
+
+- stage: Build
+
+  jobs:
+
+  - job: BuildApplication
+
+    pool:
+      vmImage: ubuntu-latest
+
+    steps:
+
+    - checkout: self
+
+    - script: |
+        echo "Installing dependencies"
+        echo "Building application"
+        echo "Running unit tests"
+
+    - task: Docker@2
+      inputs:
+        command: build
+        repository: $(appName)
+        Dockerfile: '**/Dockerfile'
+        tags: |
+          $(imageTag)
+
+
+# -------------------------
+# SECURITY
+# -------------------------
+
+- stage: Security
+
+  dependsOn: Build
+
+  jobs:
+
+  - job: SecurityScan
+
+    steps:
+
+    - script: |
+        echo "Running security scan"
+
+
+# -------------------------
+# DEV
+# -------------------------
+
+- stage: DeployDev
+
+  dependsOn:
+  - Build
+  - Security
+
+  jobs:
+
+  - deployment: Deploy
+
+    environment: dev
+
+    strategy:
+      runOnce:
+
+        deploy:
+
+          steps:
+
+          - script: |
+              echo "Deploying to DEV"
+
+
+# -------------------------
+# PROD
+# -------------------------
+
+- stage: DeployProd
+
+  dependsOn: DeployDev
+
+  condition: succeeded()
+
+  jobs:
+
+  - deployment: Deploy
+
+    environment: production
+
+    strategy:
+      runOnce:
+
+        deploy:
+
+          steps:
+
+          - script: |
+              echo "Deploying to PROD"
+```
+
+This isn't a complete production deployment by itself, but it demonstrates the architecture you need to understand.
+
+---
+
+## B60. Most Important Interview Questions
+
+You should be able to answer these without notes.
+
+### Fundamentals
+
+1. What is Azure DevOps?
+2. What is Azure Pipeline?
+3. What is CI/CD?
+4. YAML vs Classic pipeline?
+5. What is an agent?
+6. Microsoft-hosted vs self-hosted?
+7. What is a stage?
+8. What is a job?
+9. What is a step?
+10. What is a task?
+11. What is a script?
+
+### YAML
+
+12. What is `trigger`?
+13. What is `pool`?
+14. What are variables?
+15. Variables vs parameters?
+16. What are resources?
+17. What is `dependsOn`?
+18. What is `condition`?
+19. What are templates?
+20. What is a reusable template?
+21. What are pipeline artifacts?
+22. What is an environment?
+
+### Security
+
+23. What is a service connection?
+24. Why shouldn't credentials be stored in YAML?
+25. What is workload identity federation?
+26. How do you manage secrets?
+27. How do you secure production deployments?
+28. What is branch protection?
+29. How do you integrate security scanning?
+
+### DevOps
+
+30. How do you build Docker images?
+31. How do you push to a registry?
+32. How do you deploy to Kubernetes?
+33. How do you integrate Terraform?
+34. How do you implement approval?
+35. How do you optimize pipeline execution?
+36. How do you troubleshoot failed pipelines?
+
+---
+
+## B61. Troubleshooting Scenario
+
+### Interviewer:
+
+> Pipeline suddenly fails with `docker: command not found`. What will you do?
+
+Don't immediately say:
+
+> "Install Docker."
+
+Think systematically:
+
+```text
+Pipeline
+   ↓
+Which agent?
+   ↓
+Microsoft-hosted / Self-hosted?
+   ↓
+Does Docker exist?
+   ↓
+docker --version
+   ↓
+PATH?
+   ↓
+Docker service running?
+   ↓
+Permissions?
+```
+
+For self-hosted:
+
+```bash
+which docker
+docker --version
+systemctl status docker
+```
+
+Then fix the actual root cause.
+
+---
+
+## B62. Another Scenario
+
+### Pipeline works on Microsoft-hosted agent but fails on self-hosted.
+
+Possible causes:
+
+```text
+Different tool versions
+Missing tools
+PATH differences
+Permissions
+Network access
+Proxy
+Firewall
+Docker daemon
+Agent user permissions
+Certificates
+```
+
+Excellent interview answer:
+
+> "I would compare the execution environments first rather than assuming the YAML is wrong."
+
+---
+
+## B63. Production Deployment Failure
+
+If production deployment fails:
+
+Don't immediately rerun everything.
+
+Think:
+
+```text
+Deployment failed
+      ↓
+Check pipeline logs
+      ↓
+Identify failed stage/task
+      ↓
+Check application/Kubernetes logs
+      ↓
+Check configuration
+      ↓
+Check image/version
+      ↓
+Assess impact
+      ↓
+Rollback if required
+```
+
+---
+
+## B64. Rollback
+
+Example Kubernetes approach:
+
+```text
+Current
+  ↓
+Version 10
+  ↓
+Problem
+  ↓
+Rollback
+  ↓
+Version 9
+```
+
+Helm:
+
+```bash
+helm history myapp
+```
+
+Then:
+
+```bash
+helm rollback myapp <revision>
+```
+
+The exact deployment mechanism depends on your implementation.
+
+---
+
+## B65. What NOT to Say in Interviews
+
+This is very important for you.
+
+### ❌ Don't say:
+
+> "Azure DevOps is basically Jenkins."
+
+Better:
+
+> "The concepts overlap, but Azure DevOps provides an integrated suite including Repos, Pipelines, Boards, Test Plans and Artifacts."
+
+---
+
+### ❌ Don't say:
+
+> "Agent is a stage."
+
+Correct:
+
+> "The agent executes jobs; the pool determines which agent is selected."
+
+---
+
+### ❌ Don't say:
+
+> "Task and script are the same."
+
+Correct:
+
+> "A task is a predefined pipeline action, while a script executes commands directly."
+
+---
+
+### ❌ Don't say:
+
+> "Variables are for secrets."
+
+Better:
+
+> "Variables can store configuration values; sensitive values should be protected using secret management mechanisms."
+
+---
+
+### ❌ Don't say:
+
+> "Service connection stores passwords."
+
+Better:
+
+> "A service connection provides authenticated access from Azure DevOps to external resources. The underlying authentication mechanism depends on the service connection type."
+
+---
+
+### ❌ Don't say:
+
+> "Self-hosted agents are always better."
+
+Say:
+
+> "The choice depends on requirements such as private-network access, customization, compliance, cost and operational overhead."
+
+---
+
+### ❌ Don't say:
+
+> "I use `terraform apply -auto-approve` in production."
+
+Better:
+
+> "Production Terraform changes should normally go through plan review and appropriate approval/check mechanisms."
+
+---
+
+### ❌ Don't say:
+
+> "We deploy directly to production after every commit."
+
+Unless that's genuinely your organization's model.
+
+Better:
+
+```text
+Build
+ ↓
+Test
+ ↓
+Security
+ ↓
+Approval
+ ↓
+Production
+```
+
+---
+
+## B66. Interview Golden Rules
+
+Remember these **10 rules**:
+
+### Rule 1
+
+```text
+Never hardcode secrets.
+```
+
+### Rule 2
+
+```text
+Build once → Deploy many.
+```
+
+### Rule 3
+
+```text
+Least privilege.
+```
+
+### Rule 4
+
+```text
+Production requires controlled deployment.
+```
+
+### Rule 5
+
+```text
+Pipeline should be version controlled.
+```
+
+### Rule 6
+
+```text
+Use reusable templates.
+```
+
+### Rule 7
+
+```text
+Automate testing and security.
+```
+
+### Rule 8
+
+```text
+Use immutable/versioned artifacts.
+```
+
+### Rule 9
+
+```text
+Understand the execution environment.
+```
+
+### Rule 10
+
+```text
+Troubleshoot from logs and evidence, not assumptions.
+```
+
+---
+
+## B67. Your 30-Second Azure DevOps Interview Answer
+
+If interviewer asks:
+
+> "Explain how you would design an Azure DevOps pipeline."
+
+You can answer:
+
+> "I would use a YAML-based multi-stage pipeline stored with the application source code. A push or pull request would trigger CI validation including build, unit tests and security scans. After validation, the pipeline would build the application or Docker image and publish a versioned artifact. The same artifact would then be promoted across DEV, QA and PROD. Production deployment would be protected using environments, approvals and appropriate service connections. I would avoid hardcoded credentials and use secure identity mechanisms such as workload identity federation where supported. For reusable logic across multiple applications, I would use YAML templates."
+
+That's a **strong 3–5 year DevOps answer**.
+
+---
+
+## B68. One Master Memory Diagram
+
+Memorize this:
+
+```text
+                         AZURE DEVOPS
+                              |
+       +----------------------+----------------------+
+       |                      |                      |
+     REPOS                  BOARDS               PIPELINES
+       |                                             |
+       |                                           YAML
+       |                                             |
+       |                    +------------------------+----------------+
+       |                    |            |            |               |
+       |                 Trigger     Variables    Resources       Parameters
+       |                    |            |            |               |
+       |                    +------------+------------+---------------+
+       |                                 |
+       |                               Stages
+       |                                 |
+       |                       +---------+---------+
+       |                       |                   |
+       |                     Build                Test
+       |                       |                   |
+       |                     Jobs                Jobs
+       |                       |                   |
+       |                     Steps               Steps
+       |                       |                   |
+       |                +------+-----+       +-----+------+
+       |                |            |       |            |
+       |              Tasks       Scripts   Tasks       Scripts
+       |                |
+       |              Agent
+       |                |
+       |        +-------+-------+
+       |        |               |
+       |     Hosted          Self-hosted
+       |                        |
+       |                +-------+--------+
+       |                |       |        |
+       |             Docker Terraform kubectl
+       |
+       +-----------------------------------------------------------+
+                              |
+                       Service Connection
+                              |
+                    Secure Authentication
+                              |
+                 Azure / ACR / AKS / Other
+```
+
+### The mental model to memorize
+
+**"When → What → Where → How → Authenticate"**
+
+```text
+WHEN?
+  → Trigger
+
+WHAT?
+  → Variables / Parameters / Resources
+
+WHERE?
+  → Agent / Pool
+
+HOW?
+  → Stages → Jobs → Steps → Tasks/Scripts
+
+AUTHENTICATE?
+  → Service Connection
+```
+
+If you can explain that model clearly and then connect it to a **real project scenario**, you will be much stronger in Azure DevOps interviews than someone who only memorized YAML syntax.
+
+---
+
+# Quick Cross-Reference
+
+| Topic | Part A section | Part B section |
+|---|---|---|
+| Pipeline/Stage/Job/Step/Task | A2 | B3, B20–B24 |
+| YAML basics | A3 | B4 |
+| Triggers (CI, PR, schedule) | A4 | B6–B8 |
+| Variables | A5 | B10–B12 |
+| Parameters | A6, A7 | B13 |
+| `$(var)` vs `${{ }}` vs `$[ ]` | A8 | — |
+| Conditions & dependsOn | A9 | B29, B30, B50 |
+| Artifacts / build once, deploy many | A10 | B28, B46–B47 |
+| Templates | A11 | B41–B43 |
+| Environments, approvals, checks | A12 | B44–B45 |
+| Agents, pools, demands | A13 | B14–B19 |
+| Self-hosted agent security / golden image | A13 | B19 |
+| Service connections & WIF | A14 | B32–B35 |
+| Key Vault | A15 | B54 |
+| Terraform CI/CD | — | B36–B39 |
+| Docker / ACR / AKS / Helm | — | B47–B49 |
+| Matrix, caching, performance | A16 | B51–B53 |
+| Troubleshooting | A21 | B61–B64 |
+| Azure DevOps vs Jenkins / GitHub Actions | — | B56–B57 |
+| "What not to say" interview guidance | — | B65 |
+| Interview Q&A | A22 | B60 |
+| Memory map | A23 | B68 |
