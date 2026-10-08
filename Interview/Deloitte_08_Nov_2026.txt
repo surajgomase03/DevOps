@@ -1,0 +1,424 @@
+Absolutely. I’ve cleaned up your interview questions into a proper interviewer-question format, grouped by topic. This is useful for identifying your gaps and preparing for the next Deloitte/EY-level interview.
+
+Deloitte Interview — Questions Asked
+
+1. GitHub Actions / CI-CD / GitOps
+
+1. Is GitHub Actions a CI tool, a CD tool, or both?
+
+2. What is CI and what is CD?
+
+3. What is the difference between Continuous Integration, Continuous Delivery, and Continuous Deployment?
+
+4. What is GitOps?
+
+5. What is the difference between GitOps and traditional CI/CD?
+
+6. What is the difference between GitOps, Azure DevOps, and Jenkins?
+
+7. Can we perform application deployment using GitOps? If yes, how?
+
+8. What is Argo CD?
+
+9. How does Argo CD perform deployment to Kubernetes?
+
+10. What is the difference between Jenkins + Kubernetes deployment and Argo CD-based deployment?
+
+
+---
+
+2. Kubernetes — Core Concepts
+
+11. What is the difference between a Label and a Selector in Kubernetes?
+
+12. What is the default deployment strategy in Kubernetes?
+
+13. What is the difference between RollingUpdate and Recreate deployment strategies?
+
+14. How does a Pod get created in Kubernetes? Explain the complete process in the background.
+
+15. What are Kubernetes resource requests and limits?
+
+16. What happens when a Pod exceeds its CPU or memory limit?
+
+17. What is a PodDisruptionBudget (PDB)? Why is it used?
+
+18. What is kube-proxy? What is its role in Kubernetes networking?
+
+19. What Kubernetes production issues have you faced? How did you troubleshoot and resolve them?
+
+20. How do you troubleshoot a Kubernetes Pod that is not working?
+
+21. How do you troubleshoot a Kubernetes Node that is not working?
+
+22. What is the difference between a Node and a Pod?
+
+23. How do you troubleshoot when both the Node and Pod are having issues?
+
+24. How do you identify whether traffic is reaching the new version after a deployment?
+
+25. How can you verify whether a rolling deployment is successfully sending traffic to the new version?
+
+
+---
+
+3. Kubernetes Workloads
+
+26. What is the difference between Stateless and Stateful applications?
+
+27. What is the difference between Deployment and StatefulSet?
+
+28. Can a database be deployed as a Stateless application? Why or why not?
+
+29. Which types of applications should be deployed using StatefulSet and why?
+
+30. Give some real-world examples of applications that require StatefulSet.
+
+31. Why would you use StatefulSet for a database such as MySQL or PostgreSQL?
+
+
+---
+
+4. Kubernetes Storage
+
+32. What is a PersistentVolume (PV)?
+
+33. What is a PersistentVolumeClaim (PVC)?
+
+34. What is a StorageClass?
+
+35. What is the difference between PV and StorageClass?
+
+36. What is the difference between PV, PVC, and StorageClass?
+
+37. How does dynamic volume provisioning work in Kubernetes?
+
+
+---
+
+5. Kubernetes Services & Networking
+
+38. What is the difference between a LoadBalancer Service and a NodePort Service?
+
+39. When would you use NodePort instead of LoadBalancer?
+
+40. How does traffic flow from an external user to a Pod in Kubernetes?
+
+41. What is the role of kube-proxy when traffic reaches a Kubernetes Service?
+
+
+---
+
+6. Manual Java Deployment / Artifacts
+
+42. Suppose you have a .jar build artifact and Kubernetes is not available. How would you manually deploy the application?
+
+43. How would you deploy a Java .jar application on a Linux server?
+
+44. How would you start, stop, and restart a Java application manually?
+
+45. How would you configure the application to start automatically after server reboot?
+
+46. How would you perform a rollback if the newly deployed .jar version fails?
+
+
+---
+
+7. AWS
+
+47. How do you change the CPU capacity of an AWS EC2 instance?
+
+48. What is the difference between CloudWatch and CloudTrail?
+
+49. What is the difference between Spot Instances and Reserved Instances?
+
+50. What is an Availability Zone?
+
+51. What is an Availability Set?
+
+52. What is the difference between AWS Availability Zones and Azure Availability Sets?
+
+53. How does Auto Scaling work in AWS?
+
+54. How do you manually scale an AWS Auto Scaling Group?
+
+55. How do you configure automatic scaling in AWS?
+
+56. What metrics can be used to trigger Auto Scaling?
+
+57. How would you design highly available virtual machines in AWS/Azure?
+
+58. How do you make an application highly available across Availability Zones?
+
+
+---
+
+8. AWS IAM vs Microsoft Entra ID
+
+59. What is AWS IAM?
+
+60. What is Microsoft Entra ID?
+
+61. What is the difference between AWS IAM and Microsoft Entra ID?
+
+62. How do authentication and authorization work in AWS IAM?
+
+63. How would you securely provide AWS access to a CI/CD pipeline?
+
+
+---
+
+9. CI/CD Troubleshooting
+
+64. A pipeline was working yesterday but is failing today. What would you check?
+
+65. How do you troubleshoot a pipeline that suddenly started failing without any code changes?
+
+66. What would you check if the build is successful but deployment fails?
+
+67. How do you troubleshoot a successful Jenkins build followed by a failed deployment?
+
+68. What could cause a previously working pipeline to fail?
+
+Possible areas interviewer expects:
+
+Code
+ ↓
+Dependencies
+ ↓
+Credentials
+ ↓
+Secrets
+ ↓
+Agent
+ ↓
+Tools/Versions
+ ↓
+Network
+ ↓
+Permissions
+ ↓
+External Services
+ ↓
+Target Environment
+
+
+---
+
+10. Jenkins
+
+69. Explain Jenkins architecture.
+
+70. What is the difference between Jenkins Controller and Jenkins Agent?
+
+71. How does Jenkins distribute builds to agents?
+
+72. What are Jenkins executors?
+
+73. How would you design a production Jenkins architecture?
+
+74. How do you secure Jenkins?
+
+
+---
+
+11. Docker
+
+75. How would you create a Dockerfile for a Java .jar application?
+
+76. How do you containerize a Java application?
+
+77. What is the difference between COPY and ADD in a Dockerfile?
+
+78. What is the difference between CMD and ENTRYPOINT?
+
+79. How would you reduce the size of a Java Docker image?
+
+
+---
+
+12. Build Success but Deployment Failure
+
+80. The build is successful, but deployment has failed. How would you troubleshoot it?
+
+81. How would you determine whether the problem is with the application, pipeline, credentials, network, or target server?
+
+82. What logs would you check during deployment failure?
+
+83. How would you implement automatic rollback after a failed deployment?
+
+
+---
+
+13. Environment-Specific Configuration
+
+84. Suppose DEV, QA, and PROD have different database URLs. How would you configure them in the pipeline?
+
+85. How would you manage environment-specific variables in CI/CD?
+
+86. Where would you store database credentials?
+
+87. Would you hardcode database URLs and passwords in a Jenkinsfile? Why or why not?
+
+88. How would you securely pass secrets to an application during deployment?
+
+Expected concepts:
+
+DEV
+ ├── DB_URL
+ ├── DB_USER
+ └── DB_PASSWORD
+
+QA
+ ├── DB_URL
+ ├── DB_USER
+ └── DB_PASSWORD
+
+PROD
+ ├── DB_URL
+ ├── DB_USER
+ └── DB_PASSWORD
+
+Use appropriate secret/configuration management rather than hardcoding.
+
+
+---
+
+14. AWS ECS
+
+89. Do you have experience with Amazon ECS?
+
+90. What is Amazon ECS?
+
+91. What is the difference between ECS and EKS?
+
+92. What is an ECS Task Definition?
+
+93. What is an ECS Service?
+
+94. What is the difference between ECS EC2 launch type and Fargate?
+
+95. How would you deploy a Docker application to ECS?
+
+
+---
+
+15. Azure DevOps + AWS ECR
+
+96. How would you connect Azure DevOps to AWS ECR?
+
+97. How would Azure DevOps authenticate with AWS securely?
+
+98. How would you push a Docker image from an Azure DevOps pipeline to ECR?
+
+99. Would you store AWS Access Key and Secret Key directly in the pipeline? Why or why not?
+
+100. How can you implement secure authentication between Azure DevOps and AWS?
+
+
+---
+
+16. Highly Available Virtual Machines
+
+101. How would you configure highly available virtual machines?
+
+102. How would you deploy VMs across multiple Availability Zones?
+
+103. How would you handle VM failure automatically?
+
+104. How would a Load Balancer help achieve high availability?
+
+105. What happens if one VM goes down?
+
+Architecture:
+
+Load Balancer
+                  |
+        ┌─────────┴─────────┐
+        ↓                   ↓
+      VM-1                 VM-2
+     AZ-1                  AZ-2
+
+
+---
+
+17. Azure DevOps Service Connections
+
+106. What is an Azure DevOps Service Connection?
+
+107. How do you configure a Service Connection?
+
+108. How do you secure an Azure DevOps Service Connection?
+
+109. What is the principle of least privilege when configuring Service Connections?
+
+110. How can you avoid storing long-lived credentials in Azure DevOps?
+
+
+---
+
+18. Git Branching Strategy
+
+111. What branching strategy do you use in your project?
+
+112. Explain GitFlow branching strategy.
+
+113. What is the difference between GitFlow and Trunk-Based Development?
+
+114. Which branching strategy would you recommend for a CI/CD environment and why?
+
+115. How do you manage feature, release, and hotfix branches?
+
+
+---
+
+19. GitHub Token / Personal Access Token
+
+116. What is a GitHub Personal Access Token (PAT)?
+
+117. What types of GitHub tokens are available?
+
+118. What is the difference between a Fine-Grained PAT and a Classic PAT?
+
+119. How do you secure GitHub tokens?
+
+120. Where would you store a GitHub token in a CI/CD pipeline?
+
+121. How would you rotate an expired GitHub token?
+
+
+---
+
+⭐ Most Important Questions From This Interview
+
+Based on the questions they asked, I would prioritize these for your next Deloitte/MNC interview:
+
+Tier 1 — Must master
+
+1. GitOps vs CI/CD
+2. GitOps vs Jenkins vs Azure DevOps
+3. Argo CD
+4. Kubernetes Pod creation flow
+5. Labels vs Selectors
+6. RollingUpdate vs Recreate
+7. Requests vs Limits
+8. PDB
+9. kube-proxy
+10. Kubernetes production troubleshooting
+11. Node troubleshooting
+12. Pod troubleshooting
+13. StatefulSet vs Deployment
+14. PV vs PVC vs StorageClass
+15. LoadBalancer vs NodePort
+16. Jenkins architecture
+17. Build successful but deployment failed
+18. Environment-specific configuration
+19. AWS CloudWatch vs CloudTrail
+20. AWS Auto Scaling
+21. AWS IAM vs Entra ID
+22. Azure DevOps → AWS ECR
+23. Service Connection security
+24. GitHub token types
+25. Git branching strategy
+
+These questions show that the interviewer was testing practical DevOps/SRE understanding, not just definitions. Your next preparation should therefore focus heavily on "how does it work internally?" + "how do you troubleshoot it in production?" + "how do you secure it?"
