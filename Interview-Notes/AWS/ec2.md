@@ -287,48 +287,238 @@ Q4 (families and selection), Q19 (burstable credits), Q21 (Nitro, ENA, EBS-optim
 
 ---
 
-## 5. Purchasing Options and Cost
+## 5. AWS EC2 Pricing Options
 
-### 5.1 Options
+These notes are in simple English, with examples, memory tricks, and interview answers.
 
-| Option | How it works | Best for |
-| --- | --- | --- |
-| **On-Demand** | Pay by the second or hour, no commitment | Unpredictable, short-term or first deployments |
-| **Savings Plans** | Commit to a spend per hour for 1 or 3 years. **Compute** Savings Plans are flexible across families, Regions and some services. **EC2 Instance** Savings Plans are tied to a family in a Region for a bigger discount | Steady baselines |
-| **Reserved Instances (RIs)** | Commitment to specific attributes for 1 or 3 years. **Standard** (larger discount) or **Convertible** (can change attributes) | Steady, predictable usage (Savings Plans are now the usual choice) |
-| **Spot Instances** | Spare capacity at a deep discount (up to about 90%), but AWS can **reclaim it with a 2-minute notice** | Fault-tolerant, stateless, batch, CI workers, containers |
-| **Dedicated Hosts / Instances** | Physical server dedicated to you | Server-bound licences, compliance |
-| **On-Demand Capacity Reservations** | Reserve capacity in an AZ. No discount alone (combine with Savings Plans) | Guaranteed capacity for critical events or DR |
-| **Capacity Blocks for ML** | Reserve GPU capacity for a time window | Planned ML training |
+## 1. On-Demand Instances
 
-Verify current discount levels and rules in AWS pricing documentation.
+**Definition:** Pay for EC2 compute capacity as you use it. No long-term commitment is required.
+
+- No upfront commitment.
+- Pay based on usage and the instance pricing model.
+- You can start or stop instances as needed.
+- Best for unpredictable workloads and short-term use.
+- Usually more expensive than commitment-based options for steady workloads.
+
+**Example:** You need an EC2 server for testing today and might not need it next month. Choose On-Demand.
+
+**Memory trick:** On-Demand = Use it, pay for it.
+
+**Interview answer:** On-Demand Instances let us pay for compute capacity without making a long-term commitment. They are suitable for development, testing, and workloads with unpredictable demand.
+
+## 2. Savings Plans
+
+**Definition:** Commit to a specific amount of eligible compute spending per hour for 1 or 3 years to receive discounted rates.
+
+- Commitment is measured in dollars per hour, not a fixed number of EC2 instances.
+- You pay the committed amount even if your eligible usage is lower.
+- Eligible usage above the commitment is charged at applicable rates.
+- Best for workloads with predictable baseline usage.
+- Two main types: Compute Savings Plans and EC2 Instance Savings Plans.
+
+**Example:** You commit to $10 per hour of eligible compute usage for one year. If you use enough eligible services, you can receive discounted rates up to that commitment.
+
+**Memory trick:** Savings Plans = Commit to spending, save on eligible usage.
+
+**Interview answer:** Savings Plans reduce compute costs in exchange for a 1- or 3-year hourly spending commitment. Compute Savings Plans offer more flexibility across eligible compute services, while EC2 Instance Savings Plans provide deeper discounts with narrower instance-family and regional flexibility.
+
+## 3. Reserved Instances (RIs)
+
+**Definition:** Make a 1-year or 3-year commitment to receive discounted pricing for eligible EC2 usage.
+
+- Standard RIs generally offer larger discounts but less flexibility.
+- Convertible RIs offer more flexibility to exchange reservations for different configurations.
+- Payment options can include No Upfront, Partial Upfront, and All Upfront, depending on the offering.
+- RIs are primarily a billing discount, not a guarantee that capacity will be available.
+- Best for workloads that run regularly for a long time.
+
+**Example:** Your production application needs an eligible EC2 configuration 24/7 for the next three years. A Reserved Instance may reduce the cost.
+
+**Memory trick:** Reserved Instance = Commit for a discount.
+
+**Interview answer:** Reserved Instances provide discounted pricing in exchange for a one- or three-year commitment. Unlike On-Demand Capacity Reservations, they do not automatically guarantee that EC2 capacity will be available when needed.
+
+## 4. Spot Instances
+
+**Definition:** Use spare AWS EC2 capacity at a discount, but AWS can interrupt the instance when that capacity is needed elsewhere.
+
+- Can be significantly cheaper than On-Demand.
+- AWS can interrupt Spot Instances, generally providing a two-minute interruption notice when possible.
+- Best for fault-tolerant, flexible workloads.
+- Not ideal for workloads that cannot tolerate interruption.
+- Can be used with Auto Scaling groups and mixed-instance fleets.
+
+**Example:** You need 100 servers to process a large batch of data. If a server is interrupted, the job can resume on another instance. Spot Instances can reduce costs.
+
+**Memory trick:** Spot = Cheap, but interruptible.
+
+**Interview answer:** Spot Instances let us use spare EC2 capacity at discounted prices. I would use them for batch processing, CI/CD workers, and fault-tolerant workloads, while using On-Demand capacity for critical workloads that require predictable availability.
+
+## 5. Dedicated Hosts and Dedicated Instances
+
+These options provide EC2 capacity on hardware dedicated to a single customer, but they are not identical.
+
+### A. Dedicated Host
+
+**Definition:** A physical server dedicated to your use, with visibility into the host and its underlying hardware capacity.
+
+- You can control instance placement on the host.
+- Useful for software licenses tied to physical sockets or cores.
+- Supports host-level visibility and certain host-affinity requirements.
+- Can cost more and requires more capacity planning.
+
+**Example:** Your company has a software license tied to physical CPU sockets and needs to track the host hardware.
+
+**Memory trick:** Dedicated Host = Your dedicated physical server.
+
+### B. Dedicated Instance
+
+**Definition:** EC2 instances run on hardware dedicated to a single customer, but you have less visibility and control over the physical host.
+
+- Other customers' instances are not placed on that dedicated hardware.
+- You do not get the same host-level placement control as with Dedicated Hosts.
+- Useful when dedicated hardware is required without managing host placement.
+
+**Example:** Your company needs EC2 instances on hardware dedicated to it but does not need to manage physical host placement.
+
+**Memory trick:** Dedicated Instance = Dedicated hardware, less host control.
+
+**Interview answer:** Dedicated Hosts provide a physical server with host-level visibility and placement control, while Dedicated Instances run on hardware dedicated to one customer without the same level of physical host management.
+
+## 6. On-Demand Capacity Reservations
+
+**Definition:** Reserve EC2 capacity in a specific Availability Zone for as long as you need it, without a long-term commitment.
+
+- Helps ensure capacity is available when you launch matching instances.
+- Applies to a specific Availability Zone and instance configuration.
+- No one- or three-year term is required.
+- You pay the applicable On-Demand rate for reserved capacity, whether or not you use it.
+- It is a capacity reservation, not automatically a discount.
+- Can be combined with eligible Savings Plans or Reserved Instances for billing discounts.
+
+**Example:** Your company must launch 10 EC2 instances in a particular Availability Zone for an important release. You create a Capacity Reservation to secure the required capacity.
+
+**Memory trick:** Capacity Reservation = Reserve capacity, not a discount.
+
+**Interview answer:** On-Demand Capacity Reservations reserve EC2 capacity in a specified Availability Zone without a long-term commitment. They are useful for critical workloads that need capacity assurance, and they can be combined with eligible billing discounts.
+
+## 7. Quick Comparison Table
+
+| Option                          | Main benefit              | Commitment                 | Main limitation                   |
+| ------------------------------- | ------------------------- | -------------------------- | --------------------------------- |
+| On-Demand                       | Flexibility               | None                       | Usually higher cost               |
+| Savings Plans                   | Lower compute cost        | 1 or 3 years               | Hourly spending commitment        |
+| Reserved Instances              | Discounted eligible usage | 1 or 3 years               | Less flexibility for Standard RIs |
+| Spot Instances                  | Very low cost             | No long-term commitment    | Can be interrupted                |
+| Dedicated Host                  | Physical host control     | Depends on purchase option | Higher cost and management        |
+| Dedicated Instance              | Dedicated hardware        | Depends on purchase option | Less host-level control           |
+| On-Demand Capacity Reservations | Capacity assurance        | No long-term commitment    | Pay even if unused                |
+
+## 8. Which One Should You Choose? — Interview Scenarios
+
+| Scenario                                            | Best fit                                         |
+| --------------------------------------------------- | ------------------------------------------------ |
+| Temporary development server                        | On-Demand                                        |
+| Stable compute usage across eligible services       | Compute Savings Plans                            |
+| Stable EC2 usage with a known configuration         | EC2 Instance Savings Plans or Reserved Instances |
+| Interruptible batch processing                      | Spot Instances                                   |
+| Software license tied to physical hardware          | Dedicated Host                                   |
+| Dedicated hardware without host-level control       | Dedicated Instance                               |
+| Critical launch requiring capacity in a specific AZ | On-Demand Capacity Reservation                   |
+
+## 9. Easy Memory Revision
+
+| Option                    | One-line memory                    |
+| ------------------------- | ---------------------------------- |
+| On-Demand                 | No commitment                      |
+| Savings Plans             | Commit spending to save            |
+| Reserved Instances        | Commit usage for a discount        |
+| Spot Instances            | Cheap but interruptible            |
+| Dedicated Host / Instance | Hardware dedicated to one customer |
+| Capacity Reservation      | Ensure capacity in a specific AZ   |
+
+> **Important interview distinction:** Savings Plans and Reserved Instances are primarily pricing commitments; Capacity Reservations address capacity availability. Spot Instances prioritize cost savings but may be interrupted.
 
 ### 5.2 Spot essentials
 
-1. Spot is **cheap but interruptible**. Design for it: stateless, checkpointing, retries, graceful shutdown.
-2. You get a **2-minute interruption notice** via instance metadata (`/latest/meta-data/spot/instance-action`) and EventBridge. A **rebalance recommendation** can arrive earlier.
-3. Use **many instance types and AZs** (diversification) and the `price-capacity-optimized` allocation strategy.
-4. Run **Spot through Auto Scaling groups or EC2 Fleet**, not as lone instances (see `ec2-auto-scaling.md`).
-5. Never put a database primary or an unrecoverable single-instance service on Spot.
+# AWS EC2 — Spot Essentials and Cost Optimization (Simple Notes)
 
-### 5.3 Cost levers beyond purchasing options
+## 5.2 Spot Instances — Essentials
 
-| Lever | Detail |
-| --- | --- |
-| **Right-size** | Compute Optimizer, CloudWatch metrics |
-| **Stop idle instances** | Dev and test on schedules (EventBridge Scheduler, Instance Scheduler). Stopped instances still pay for EBS |
-| **Delete unattached EBS volumes and old snapshots** | Frequent hidden cost |
-| **gp3 instead of gp2** | Often cheaper for the same performance |
-| **Graviton** | Lower price for similar performance |
-| **Public IPv4 addresses** | AWS charges for public IPv4 addresses, including in-use ones. Release unused Elastic IPs and avoid unnecessary public IPs. Verify current pricing |
-| **NAT gateway and data transfer** | Use VPC endpoints for S3 and DynamoDB. Keep traffic in the same AZ when sensible |
-| **Tags and budgets** | Cost allocation tags, AWS Budgets, Cost Anomaly Detection |
+### 1. Spot is cheap but interruptible
 
-### 5.4 Interview pointers
+- Spot Instances are cheaper than On-Demand Instances.
+- AWS can stop or terminate them when it needs the capacity.
+- Design applications to handle interruptions.
+- Use checkpoints, retries, and graceful shutdown.
 
-Q17 (purchasing options), Q25 (Spot interruption handling).
+**Example:** If a batch job stops, it should restart from where it left off.
 
----
+### 2. Two-minute interruption notice
+
+- AWS generally provides a 2-minute warning before interrupting a Spot Instance.
+- You can check the notice using instance metadata:
+
+```
+/latest/meta-data/spot/instance-action
+```
+
+- EventBridge can also help detect Spot interruption events.
+- A rebalance recommendation may arrive earlier, warning that an instance is at increased risk of interruption.
+
+### 3. Use multiple instance types and Availability Zones
+
+- Do not depend on only one instance type or one AZ.
+- Use multiple instance types and AZs to improve availability.
+- Prefer the `price-capacity-optimized` allocation strategy, which balances price and the availability of Spot capacity.
+
+### 4. Use Auto Scaling Groups or EC2 Fleet
+
+- Run Spot Instances through an Auto Scaling Group or EC2 Fleet.
+- These services help manage multiple instances and replace capacity when possible.
+- Avoid depending on a single Spot Instance.
+
+### 5. Avoid Spot for critical, non-recoverable workloads
+
+Do not use Spot as the only instance for:
+
+- A database primary that cannot tolerate interruption.
+- A critical service running on only one instance.
+- A workload that cannot recover after an unexpected stop.
+
+Use On-Demand or another suitable reliable option for critical workloads.
+
+**Memory trick:** Spot = Cheap + Interruptible + Recoverable design.
+
+**Interview answer:** "Spot Instances provide low-cost EC2 capacity but can be interrupted by AWS. I use them for fault-tolerant workloads, diversify instance types and Availability Zones, and run them through Auto Scaling Groups or EC2 Fleet. I also design applications with checkpoints, retries, and graceful shutdown."
+
+## 6. AWS EC2 Cost Optimization
+
+| Cost-saving method                             | Simple explanation                                                                                                                                                                                                |
+| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Right-size instances                        | Choose the correct EC2 size based on CPU and memory usage. Use AWS Compute Optimizer and CloudWatch metrics to identify oversized instances.                                                                      |
+| 2. Stop idle instances                         | Automatically stop development and testing servers when nobody needs them. Use EventBridge Scheduler or Instance Scheduler. Stopped instances still incur EBS storage charges.                                    |
+| 3. Delete unused EBS volumes and old snapshots | Find unattached EBS volumes and unnecessary old snapshots. Delete them only after confirming they are not needed for recovery.                                                                                    |
+| 4. Use GP3 instead of GP2                      | GP3 volumes can offer lower storage costs with independently configurable IOPS and throughput. Check workload performance before migrating.                                                                       |
+| 5. Use AWS Graviton                            | Choose compatible Graviton-based EC2 instances for potentially better price-performance. Check application and software compatibility first.                                                                      |
+| 6. Reduce public IPv4 costs                    | AWS charges for public IPv4 addresses, including addresses in use. Release unused Elastic IPs and avoid unnecessary public IP addresses.                                                                          |
+| 7. Optimize NAT Gateway and data transfer      | Use VPC endpoints for S3 and DynamoDB where appropriate to reduce NAT Gateway processing charges. Keep traffic within the same Availability Zone when practical, while considering availability and architecture. |
+| 8. Use tags and budgets                        | Apply cost-allocation tags to identify spending by project or environment. Use AWS Budgets and Cost Anomaly Detection to monitor unexpected costs.                                                                |
+
+### Simple real-world example
+
+Suppose your development environment has 20 EC2 instances, and nobody uses them at night.
+
+1. Schedule them to stop after office hours.
+2. Right-size oversized instances.
+3. Delete unused EBS volumes after verification.
+4. Review NAT Gateway and public IPv4 charges.
+5. Set AWS Budgets alerts to track spending.
+
+**Interview answer:** "I optimize AWS costs by right-sizing EC2 instances using Compute Optimizer and CloudWatch, scheduling non-production instances to stop during idle hours, cleaning up unused EBS resources, evaluating GP3 and Graviton, optimizing NAT Gateway and data-transfer costs, and using cost-allocation tags, AWS Budgets, and Cost Anomaly Detection."
+
+**Memory trick:** Right-size → Stop → Clean up → Optimize → Monitor.
 
 ## 6. Instance Lifecycle: Stop, Reboot, Terminate, Hibernate
 
@@ -416,33 +606,294 @@ Limits (sizes, maximum IOPS and throughput) change. Verify in the current docume
 
 ### 7.5 Resizing and modifying volumes (Elastic Volumes)
 
-1. You can increase size, change type and change IOPS/throughput **while attached and in use**.
-2. **You cannot shrink a volume.** To make one smaller, create a new smaller volume and copy the data.
-3. After a modification there is a **cooldown (about 6 hours)** before the next one. Verify the current rule.
-4. The OS does not see the new size automatically. Extend the **partition** and the **file system**:
+## 1. Simple definition
+
+Elastic Volumes is an AWS EBS feature that lets you modify an EBS volume's size, volume type, IOPS, and throughput without detaching the volume or stopping the EC2 instance in supported configurations.
+
+## 2. What can you modify?
+
+- **Volume size:** Increase disk capacity, for example, 100 GB → 200 GB.
+- **Volume type:** Change GP2 to GP3, for example.
+- **IOPS:** Increase input/output operations per second when supported.
+- **Throughput:** Increase data transfer performance when supported.
+
+**Example:**
+
+Before modification:
+
+```
+EC2 Instance
+   └── EBS Volume
+       Type: gp2
+       Size: 100 GB
+```
+
+After modification:
+
+```
+EC2 Instance (running)
+   └── EBS Volume
+       Type: gp3
+       Size: 200 GB
+```
+
+## 3. How to resize an EBS volume
+
+### Step 1: Check disk usage
 
 ```bash
-lsblk                                 # find device and partition (for example nvme0n1, nvme0n1p1)
-sudo growpart /dev/nvme0n1 1          # extend partition 1 (if the volume is partitioned)
-sudo xfs_growfs -d /                  # XFS: grow mounted file system
-# ext4 instead:
-sudo resize2fs /dev/nvme0n1p1
-df -hT                                # confirm the new size
+lsblk
+df -h
 ```
+
+### Step 2: Modify the volume in AWS Console
+
+Go to **EC2 → Elastic Block Store → Volumes → Select volume → Actions → Modify volume**.
+
+### Step 3: Verify the new size
+
+```bash
+lsblk
+df -h
+```
+
+The block device may show the new size before the filesystem does.
+
+### Step 4: Extend the partition/filesystem if required
+
+Increasing the EBS volume size does not always automatically increase the usable filesystem space.
+
+## 4. Linux commands to extend the filesystem
+
+First, inspect the disk and filesystem:
+
+```bash
+lsblk
+df -hT
+```
+
+For an XFS filesystem on a device mounted at `/data`:
+
+```bash
+sudo xfs_growfs /data
+```
+
+For an ext4 filesystem on a partition, after expanding the partition if necessary:
+
+```bash
+sudo resize2fs /dev/nvme1n1p1
+```
+
+If the partition itself needs to grow, use an appropriate partition-resizing procedure first. The correct commands depend on whether the EBS volume contains a partition, a whole-disk filesystem, or LVM.
+
+> **Important:** Always verify the device name and take a suitable backup or snapshot before making storage changes.
+
+## 5. Interview scenario
+
+**Question:** Your production EC2 server has a 100 GB disk, and disk usage is reaching 95%. What will you do?
+
+**Answer:**
+
+1. Check disk and filesystem usage using `df -h` and `lsblk`.
+2. Identify the EBS volume attached to the instance.
+3. Take a snapshot if appropriate for recovery.
+4. Modify the EBS volume from 100 GB to 200 GB.
+5. Wait until the modification reaches a suitable state.
+6. Extend the partition and filesystem if required.
+7. Verify the available space using `df -h`.
+8. Monitor the application and disk utilization.
+
+## 6. Key interview points
+
+- Elastic Volumes supports online modification for supported EBS configurations.
+- Increasing an EBS volume's size does not necessarily extend the filesystem automatically.
+- EBS volume modifications have service-specific limits and timing considerations.
+- Increasing volume size or performance can increase costs.
+- A snapshot provides a recovery point but does not replace proper change planning.
+
+**Memory trick:** Modify EBS → Extend partition if needed → Extend filesystem → Verify.
 
 ### 7.6 Mounting a new volume safely
 
-```bash
-lsblk                                           # identify the new device, for example nvme1n1
-sudo file -s /dev/nvme1n1                       # "data" means no file system yet
-sudo mkfs -t xfs /dev/nvme1n1                   # ONLY for a new empty volume. This erases data.
-sudo mkdir -p /data
-sudo mount /dev/nvme1n1 /data
-sudo blkid /dev/nvme1n1                         # get the UUID
-echo 'UUID=<uuid>  /data  xfs  defaults,nofail  0  2' | sudo tee -a /etc/fstab
-sudo mount -a && df -hT /data                   # test fstab before rebooting
+## 1. Simple definition
+
+Mounting a new EBS volume means connecting an AWS virtual disk to a directory in Linux so that you can store and access data.
+
+**Example:**
+
+```
+EC2 Instance
+    |
+    └── EBS Volume (100 GB)
+             |
+             └── /data
 ```
 
+## 2. Step-by-step process
+
+### Step 1: Identify the new disk
+
+```bash
+lsblk
+```
+
+Check available disks and identify the newly attached volume.
+
+```bash
+sudo fdisk -l
+```
+
+> **Important:** Verify the disk carefully. Device names such as `/dev/nvme1n1` can vary between instances and may change after reboot.
+
+### Step 2: Check whether the disk contains data
+
+```bash
+sudo file -s /dev/nvme1n1
+```
+
+- If it reports a filesystem, do not format the disk.
+- If it reports data or an existing partition, investigate before proceeding.
+- Only format a confirmed new, empty volume.
+
+> **Never run `mkfs` blindly. It can destroy existing data.**
+
+### Step 3: Create a filesystem (only for a confirmed empty disk)
+
+For XFS:
+
+```bash
+sudo mkfs.xfs /dev/nvme1n1
+```
+
+For ext4:
+
+```bash
+sudo mkfs.ext4 /dev/nvme1n1
+```
+
+These commands assume you intend to create a filesystem directly on the whole disk, without a partition.
+
+### Step 4: Create a mount point
+
+```bash
+sudo mkdir -p /data
+```
+
+### Step 5: Mount the volume
+
+```bash
+sudo mount /dev/nvme1n1 /data
+```
+
+### Step 6: Verify the mount
+
+```bash
+df -hT
+```
+
+```bash
+lsblk
+```
+
+```bash
+findmnt /data
+```
+
+Confirm that the expected disk is mounted at `/data`.
+
+### Step 7: Make the mount persistent
+
+Get the filesystem UUID:
+
+```bash
+sudo blkid /dev/nvme1n1
+```
+
+Example:
+
+```
+/dev/nvme1n1: UUID="abcd-1234" TYPE="xfs"
+```
+
+Edit `/etc/fstab`:
+
+```bash
+sudo vi /etc/fstab
+```
+
+Add the entry using your actual UUID:
+
+```
+UUID=abcd-1234 /data xfs defaults,nofail 0 2
+```
+
+Test the configuration:
+
+```bash
+sudo mount -a
+```
+
+Verify again:
+
+```bash
+findmnt /data
+df -hT
+```
+
+**Why use UUID?** Device names can change, while a filesystem UUID provides a more reliable identifier.
+
+## 3. Complete command flow
+
+For a confirmed new, empty EBS volume with XFS:
+
+```bash
+# 1. Identify the disk
+lsblk
+
+# 2. Verify that the disk is empty
+sudo file -s /dev/nvme1n1
+
+# 3. Create the filesystem
+sudo mkfs.xfs /dev/nvme1n1
+
+# 4. Create the mount point
+sudo mkdir -p /data
+
+# 5. Mount the disk
+sudo mount /dev/nvme1n1 /data
+
+# 6. Verify
+df -hT
+findmnt /data
+
+# 7. Get UUID
+sudo blkid /dev/nvme1n1
+
+# 8. Add the UUID entry to /etc/fstab
+sudo vi /etc/fstab
+
+# 9. Test the configuration
+sudo mount -a
+```
+
+> **Do not rerun the formatting command on an existing volume.**
+
+## 4. Production interview scenario
+
+**Question:** You attached a new EBS volume to a production EC2 instance. How will you mount it safely?
+
+**Answer:**
+
+1. Identify the correct volume using `lsblk` and AWS console details.
+2. Check for existing data and filesystems before formatting.
+3. Create a filesystem only if the disk is confirmed empty.
+4. Create a mount point and mount the volume.
+5. Verify the filesystem and mount using `findmnt` and `df -hT`.
+6. Add a UUID-based entry to `/etc/fstab`.
+7. Test the configuration using `mount -a`.
+8. Monitor the application and confirm that the mount persists across reboot.
+
+**Memory trick:** Identify → Inspect → Format (only if empty) → Mount → Verify → Persist.
 1. On Nitro instances, devices appear as `nvme*n1`. Names can change between boots, so **use UUIDs in `/etc/fstab`**.
 2. A **wrong `/etc/fstab` entry can stop the instance from booting** correctly. Use `nofail` for non-root volumes and always run `mount -a` to test.
 
@@ -559,90 +1010,219 @@ Q7 (IP types), Q8 (public/private subnets, IGW vs NAT), Q20 (ENI and placement g
 | Default | Inbound denied, outbound allowed | Default NACL allows all |
 | Typical use | Instance-level access control | Coarse subnet guardrails, blocking known bad ranges |
 
-### 9.2 Security group rules
+# AWS EC2 Security and Access — Simple Notes
 
-1. Rules specify protocol, port range and a **source/destination**: a CIDR, a **prefix list** or **another security group**.
-2. **Reference security groups, not IP ranges, between tiers**: allow the app SG to reach the DB SG. Instances can scale without rule changes.
-3. A web application example:
+## 9.2 Security Group Rules
 
-| Direction | Port | Source | Reason |
-| --- | --- | --- | --- |
-| Inbound | TCP 443 | ALB security group | Only the load balancer reaches the app |
-| Inbound | TCP 22 | Not needed if Session Manager is used | Avoid SSH exposure |
-| Outbound | TCP 443 | `0.0.0.0/0` or endpoints | Patches and AWS APIs. Tighten as needed |
+### Simple definition
 
-4. **[MANDATORY]** Do not open SSH (22), RDP (3389) or database ports to `0.0.0.0/0`.
-5. Changes to a security group apply **immediately** to existing connections' new traffic (existing tracked connections may continue).
-6. Security groups are **per VPC**. Quotas apply to rules per group and groups per interface. Verify current numbers.
+A Security Group (SG) acts as a virtual firewall for EC2 instances. It controls inbound and outbound traffic.
 
-### 9.3 NACL gotchas
+- **Inbound rules:** Control traffic coming into the instance.
+- **Outbound rules:** Control traffic leaving the instance.
+- Security groups are stateful: response traffic is automatically allowed.
+- Rules allow traffic; they do not have explicit deny rules.
+- You can specify protocols, ports, and source or destination IP ranges or security groups.
 
-1. Stateless means you must allow **ephemeral ports (1024–65535)** for return traffic.
-2. Rules are evaluated by number. Leave gaps (100, 200, 300) so you can insert later.
-3. NACLs are a common hidden cause of "SG is correct but traffic still fails". Check them, especially in subnets that someone customised.
+### Common rules
 
-### 9.4 Interview pointers
+| Purpose | Protocol | Port |
+| ------- | -------- | ---- |
+| SSH     | TCP      | 22   |
+| HTTP    | TCP      | 80   |
+| HTTPS   | TCP      | 443  |
+| RDP     | TCP      | 3389 |
 
-Q9 (SG vs NACL), Q28 (SSH troubleshooting).
+### Example
 
----
+Suppose your EC2 server hosts a website.
 
-## 10. Access: Key Pairs, Session Manager and Instance Connect
-
-### 10.1 Key pairs and SSH
-
-1. A **key pair** consists of a public key (stored by AWS and placed in the instance's `authorized_keys` at **launch**) and a private key (you keep).
-2. Connect:
-
-```bash
-chmod 400 my-key.pem                      # private key must not be readable by others
-ssh -i my-key.pem ec2-user@<public-ip-or-dns>
+```
+Internet
+   |
+   | HTTPS : 443
+   v
+Security Group
+   |
+   v
+EC2 Web Server
 ```
 
-3. Default usernames depend on the AMI: `ec2-user` (Amazon Linux), `ubuntu` (Ubuntu), `admin` (Debian), `centos`, `ec2-user` or `rocky` (others; verify). Windows uses RDP with the decrypted administrator password.
-4. **Lost private key:** AWS cannot recover it. Use Session Manager or EC2 Instance Connect, or attach the root volume to a rescue instance and add a new public key (section 16, scenario C1).
-5. **Never** put private keys in Git, AMIs, user data or container images. Prefer short-lived access (SSM) over long-lived keys.
+Allow HTTPS from the intended clients. For SSH, restrict access to a trusted IP or use Session Manager to avoid opening port 22.
 
-### 10.2 SSH troubleshooting checklist
+**Memory trick:** Security Group = Stateful instance firewall.
 
-1. Correct **username** and **private key**, and key file permissions (`chmod 400`).
-2. Instance **running** and **status checks** passing.
-3. **Security group:** inbound TCP 22 from your source IP. (Your IP may have changed.)
-4. **Public IP** (or EIP) exists, subnet route table has an **IGW route**. For private instances use a bastion, VPN or SSM.
-5. **NACL** allows inbound 22 and return ephemeral ports.
-6. On the instance: `sshd` running, host firewall (`iptables`/`firewalld`), disk not full (a full disk can break SSH), `authorized_keys` permissions, and `/var/log/secure` or `/var/log/auth.log`.
-7. Use `ssh -vvv` for client-side detail.
+## 9.3 NACL Gotchas
 
-### 10.3 AWS Systems Manager Session Manager (preferred)
+### Simple definition
 
-1. Gives a shell **without inbound ports, bastions or SSH keys**. Access is controlled by **IAM**, and sessions can be logged to **CloudWatch Logs or S3** and audited in CloudTrail.
-2. Requirements:
-   1. **SSM Agent** installed and running (preinstalled on Amazon Linux and many AMIs).
-   2. An **instance profile** with permissions such as the managed policy `AmazonSSMManagedInstanceCore`.
-   3. A **network path** to the SSM endpoints (`ssm`, `ssmmessages`, `ec2messages`): through a NAT gateway or **VPC interface endpoints**.
-3. Also supports **port forwarding** (reach a private database or web UI from your laptop) and **Run Command** and **Patch Manager** for fleets.
-4. The user running the Session Manager plugin needs `ssm:StartSession` on the target.
+A Network Access Control List (NACL) is a firewall associated with a VPC subnet. It controls inbound and outbound traffic at the subnet level.
 
-```bash
-aws ssm start-session --target <instance-id>
-aws ssm start-session --target <instance-id> \
-  --document-name AWS-StartPortForwardingSessionToRemoteHost \
-  --parameters '{"host":["<db-endpoint>"],"portNumber":["5432"],"localPortNumber":["15432"]}'
+- NACLs are stateless: inbound and outbound traffic must be allowed separately.
+- They support both allow and deny rules.
+- Rules are evaluated in ascending rule-number order.
+- The first matching rule decides whether traffic is allowed or denied.
+- Each subnet is associated with one NACL at a time; a NACL can be associated with multiple subnets.
+- The default NACL allows all inbound and outbound IPv4 traffic, and IPv6 traffic where configured. A custom NACL denies traffic by default until rules are added.
+
+### Important gotcha: Ephemeral ports
+
+When a client connects to a server, the reply usually goes to a temporary client-side port.
+
+**Example:**
+
+```
+Client
+  |
+  | Request to server port 443
+  v
+Server
+  |
+  | Reply to client's ephemeral port
+  v
+Client
 ```
 
-### 10.4 EC2 Instance Connect
+If the NACL blocks the required return traffic, the connection may fail even when the Security Group is configured correctly.
 
-1. Pushes a **temporary public key (valid for about 60 seconds)** to the instance metadata so you can SSH without managing long-lived keys. Needs the instance's agent and **inbound port 22** to the source. Verify the OS support.
-2. Useful for quick, audited access, but Session Manager avoids opening port 22 at all.
+### Security Group vs NACL
 
-### 10.5 Which to choose
+| Feature         | Security Group                 | NACL                                |
+| --------------- | ------------------------------ | ----------------------------------- |
+| Applies to      | Network interfaces / instances | Subnets                             |
+| Stateful?       | Yes                            | No                                  |
+| Allow rules     | Yes                            | Yes                                 |
+| Deny rules      | No explicit deny rules         | Yes                                 |
+| Rule evaluation | All applicable rules           | Lowest numbered matching rule first |
 
-| Need | Use |
-| --- | --- |
-| Production admin access, audit, no open ports | **Session Manager** |
-| Temporary SSH with IAM control | EC2 Instance Connect |
-| Automation tools that require SSH | Key pair or EC2 Instance Connect Endpoint (verify) with tight SG rules |
-| Fleet commands, patching | SSM Run Command, Patch Manager |
+**Memory trick:** SG = Stateful; NACL = Stateless.
+
+# 10. EC2 Access: Key Pairs, Session Manager and Instance Connect
+
+## 10.1 Key Pairs
+
+A key pair is used to authenticate SSH access to Linux EC2 instances.
+
+- **Public key:** Installed on the instance.
+- **Private key:** Kept securely by you.
+- Never share or expose your private key.
+- The Security Group must allow inbound SSH on port 22 from your source IP when connecting directly over SSH.
+
+**Example:**
+
+```bash
+ssh -i my-key.pem ec2-user@<EC2-PUBLIC-IP>
+```
+
+The username depends on the AMI. For example, Amazon Linux commonly uses `ec2-user`, while Ubuntu commonly uses `ubuntu`.
+
+## 10.2 SSH Troubleshooting Checklist
+
+If you cannot connect to your EC2 instance, check these items in order:
+
+1. **Instance status:** Is the instance running and passing status checks?
+2. **Public IP:** Does it have a reachable public IP or DNS name if connecting over the internet?
+3. **Security Group:** Is inbound TCP port 22 allowed from your current public IP?
+4. **NACL:** Are inbound SSH and required outbound return/ephemeral traffic allowed?
+5. **Route table:** Is there a valid route to the internet gateway for direct public access?
+6. **Key pair:** Are you using the correct private key and file permissions?
+7. **Username:** Are you using the correct AMI username?
+8. **Network:** Is your local network, VPN, or corporate firewall blocking SSH?
+9. **Instance OS:** Is the SSH service running and is the OS firewall allowing traffic?
+
+Example key permission command:
+
+```bash
+chmod 400 my-key.pem
+```
+
+**Common error meanings:**
+
+- `Connection timed out` — often a network route, Security Group, NACL, or firewall issue.
+- `Permission denied (publickey)` — often the wrong key, username, or SSH configuration.
+- `Connection refused` — the host may be reachable, but SSH may not be listening or may be blocked locally.
+
+## 10.3 AWS Systems Manager Session Manager (Preferred)
+
+### Simple definition
+
+Session Manager lets you access an EC2 instance through AWS Systems Manager without opening inbound SSH port 22 or managing SSH keys.
+
+### Requirements
+
+- The instance must have a supported SSM Agent installed and running.
+- The instance needs an appropriate IAM instance profile with permissions such as `AmazonSSMManagedInstanceCore`.
+- It must have network connectivity to the Systems Manager service endpoints, through internet access or suitable VPC endpoints.
+- Your IAM identity needs permission to start sessions.
+
+### How it works
+
+```
+Administrator
+     |
+     v
+AWS Systems Manager
+     |
+     v
+SSM Agent on EC2
+     |
+     v
+Instance terminal
+```
+
+### Benefits
+
+- No inbound port 22 required.
+- Centralized IAM access control.
+- Session logging can be configured with CloudTrail and supported logging destinations.
+- Useful for production administration and auditing.
+
+**Memory trick:** Session Manager = Secure access without opening SSH.
+
+## 10.4 EC2 Instance Connect
+
+### Simple definition
+
+EC2 Instance Connect provides temporary SSH access by delivering a temporary public key to the instance.
+
+1. The public key is pushed for approximately 60 seconds.
+2. The instance must support EC2 Instance Connect and have the required software configured.
+3. The Security Group and network must permit SSH on port 22 from the connection source.
+4. The user still needs appropriate IAM permissions.
+
+**Example:**
+
+```
+Administrator
+     |
+     v
+EC2 Instance Connect
+     |
+     | Temporary public key
+     v
+EC2 Instance
+     |
+     v
+SSH session
+```
+
+> **Important:** EC2 Instance Connect is not the same as Session Manager. Standard EC2 Instance Connect uses SSH and normally requires port 22 access. An EC2 Instance Connect Endpoint can provide private connectivity to instances without requiring a public IP, but the endpoint and security rules must be configured appropriately.
+
+**Memory trick:** Instance Connect = Temporary SSH key.
+
+## 10.5 Which Access Method Should You Choose?
+
+| Need                                                         | Recommended option                                                                 |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Production administration, auditing, and no inbound SSH port | Systems Manager Session Manager                                                    |
+| Temporary SSH access with IAM control                        | EC2 Instance Connect                                                               |
+| Automation tools that require SSH                            | Key pair or EC2 Instance Connect Endpoint, with tightly restricted Security Groups |
+| Fleet-wide commands                                          | Systems Manager Run Command                                                        |
+| Patch management                                             | Systems Manager Patch Manager                                                      |
+
+### Interview answer
+
+"For production EC2 access, I prefer Systems Manager Session Manager because it avoids opening inbound port 22 and supports centralized IAM control and session logging. For temporary SSH access, I can use EC2 Instance Connect. For automation tools that require SSH, I use tightly restricted network rules and secure key management."
 
 ### 10.6 Interview pointers
 
@@ -1052,306 +1632,6 @@ systemctl --failed           # failed services
 
 Look for: high `wa` (disk wait) vs high `us`/`sy` (CPU work), `Out of memory: Killed process` in `dmesg`, and full disks or inodes.
 
-### 15.6 Terraform: a private, hardened instance with Session Manager
-
-> Terraform was **not run** while writing these notes. Treat the HCL as a reviewed template: run `terraform fmt`, `validate` and `plan`, and check argument names against your provider version.
-
-**Folder structure**
-
-```text
-ec2-web/
-├── versions.tf
-├── variables.tf
-├── main.tf          # AMI lookup, IAM role/profile, security group, instance, data volume
-├── outputs.tf
-└── envs/
-    ├── dev.tfvars
-    └── prod.tfvars
-```
-
-**versions.tf**
-
-```hcl
-terraform {
-  required_version = ">= 1.6"
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "~> 5.0"
-    }
-  }
-}
-
-provider "aws" {
-  region = var.region
-}
-```
-
-**variables.tf**
-
-```hcl
-variable "region" { type = string }
-variable "name" {
-  type    = string
-  default = "lab-web-01"
-}
-variable "vpc_id" { type = string }
-variable "subnet_id" {
-  type        = string
-  description = "Private subnet (route to NAT or VPC endpoints for SSM)"
-}
-variable "alb_security_group_id" {
-  type        = string
-  description = "Security group of the load balancer allowed to reach the app"
-}
-variable "instance_type" {
-  type    = string
-  default = "t3.small"
-}
-variable "app_port" {
-  type    = number
-  default = 8080
-}
-variable "tags" {
-  type    = map(string)
-  default = {}
-}
-```
-
-**main.tf**
-
-```hcl
-# ---- Latest Amazon Linux 2023 AMI from the public SSM parameter ----
-data "aws_ssm_parameter" "al2023" {
-  name = "/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64"
-}
-
-# ---- IAM role + instance profile (Session Manager access only; add app policies separately) ----
-data "aws_iam_policy_document" "assume" {
-  statement {
-    actions = ["sts:AssumeRole"]
-    principals {
-      type        = "Service"
-      identifiers = ["ec2.amazonaws.com"]
-    }
-  }
-}
-
-resource "aws_iam_role" "this" {
-  name               = "${var.name}-role"
-  assume_role_policy = data.aws_iam_policy_document.assume.json
-  tags               = var.tags
-}
-
-resource "aws_iam_role_policy_attachment" "ssm" {
-  role       = aws_iam_role.this.name
-  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-}
-
-resource "aws_iam_instance_profile" "this" {
-  name = "${var.name}-profile"
-  role = aws_iam_role.this.name
-}
-
-# ---- Security group: only the ALB reaches the app. No SSH. ----
-resource "aws_security_group" "this" {
-  name        = "${var.name}-sg"
-  description = "App instance: inbound from ALB only"
-  vpc_id      = var.vpc_id
-  tags        = merge(var.tags, { Name = "${var.name}-sg" })
-}
-
-resource "aws_vpc_security_group_ingress_rule" "from_alb" {
-  security_group_id            = aws_security_group.this.id
-  referenced_security_group_id = var.alb_security_group_id
-  ip_protocol                  = "tcp"
-  from_port                    = var.app_port
-  to_port                      = var.app_port
-  description                  = "App port from ALB"
-}
-
-resource "aws_vpc_security_group_egress_rule" "https_out" {
-  security_group_id = aws_security_group.this.id
-  cidr_ipv4         = "0.0.0.0/0"
-  ip_protocol       = "tcp"
-  from_port         = 443
-  to_port           = 443
-  description       = "HTTPS to AWS APIs and package repositories (tighten with endpoints)"
-}
-
-# ---- The instance ----
-resource "aws_instance" "this" {
-  ami                    = data.aws_ssm_parameter.al2023.value
-  instance_type          = var.instance_type
-  subnet_id              = var.subnet_id
-  vpc_security_group_ids = [aws_security_group.this.id]
-  iam_instance_profile   = aws_iam_instance_profile.this.name
-
-  associate_public_ip_address = false
-  monitoring                  = true   # detailed (1-minute) monitoring
-  ebs_optimized               = true
-  disable_api_termination     = true   # set false in dev, or Terraform destroy will fail
-
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required" # IMDSv2 only
-    http_put_response_hop_limit = 1
-  }
-
-  root_block_device {
-    volume_type           = "gp3"
-    volume_size           = 20
-    encrypted             = true
-    delete_on_termination = true
-    tags                  = merge(var.tags, { Name = "${var.name}-root" })
-  }
-
-  user_data = <<-EOT
-    #!/bin/bash
-    set -euxo pipefail
-    dnf install -y nginx
-    systemctl enable --now nginx
-  EOT
-  user_data_replace_on_change = true   # a user data change replaces the instance. Use deliberately.
-
-  tags = merge(var.tags, { Name = var.name })
-
-  lifecycle {
-    ignore_changes = [ami] # AMI parameter moves over time. Roll out new AMIs deliberately, not by accident.
-  }
-}
-
-# ---- Separate encrypted data volume (survives instance replacement) ----
-resource "aws_ebs_volume" "data" {
-  availability_zone = aws_instance.this.availability_zone
-  size              = 50
-  type              = "gp3"
-  encrypted         = true
-  tags              = merge(var.tags, { Name = "${var.name}-data" })
-}
-
-resource "aws_volume_attachment" "data" {
-  device_name = "/dev/sdf"
-  volume_id   = aws_ebs_volume.data.id
-  instance_id = aws_instance.this.id
-}
-```
-
-**outputs.tf**
-
-```hcl
-output "instance_id" { value = aws_instance.this.id }
-output "private_ip"  { value = aws_instance.this.private_ip }
-output "session_command" {
-  value = "aws ssm start-session --target ${aws_instance.this.id}"
-}
-```
-
-**Commands and expected output**
-
-```bash
-terraform init
-terraform fmt -check && terraform validate     # expected: "Success! The configuration is valid."
-terraform plan -var-file=envs/dev.tfvars -out=tfplan
-terraform apply tfplan
-# then: aws ssm start-session --target <instance_id>
-```
-
-**Explanation of key decisions**
-
-1. No key pair and no inbound SSH rule. Access is through Session Manager with IAM.
-2. IMDSv2 required, encrypted gp3 root volume, private subnet, detailed monitoring.
-3. `ignore_changes = [ami]` stops silent replacement when the public AMI parameter moves. For fleets use a launch template with controlled instance refresh instead (see Auto Scaling notes).
-4. `user_data_replace_on_change = true` is explicit. Changing user data replaces the instance, so be sure that is intended.
-5. A separate data volume survives instance replacement. Format and mount it once, using UUID in `/etc/fstab` (section 7.6).
-6. For a production service, run instances **in an Auto Scaling group behind an ALB**, not as hand-managed single instances.
-
-### 15.7 Terraform: launch template (the unit used by Auto Scaling)
-
-```hcl
-resource "aws_launch_template" "web" {
-  name_prefix   = "web-"
-  image_id      = data.aws_ssm_parameter.al2023.value
-  instance_type = var.instance_type
-
-  iam_instance_profile { name = aws_iam_instance_profile.this.name }
-  vpc_security_group_ids = [aws_security_group.this.id]
-
-  metadata_options {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 1
-  }
-
-  block_device_mappings {
-    device_name = "/dev/xvda"
-    ebs {
-      volume_type           = "gp3"
-      volume_size           = 20
-      encrypted             = true
-      delete_on_termination = true
-    }
-  }
-
-  monitoring { enabled = true }
-
-  tag_specifications {
-    resource_type = "instance"
-    tags          = merge(var.tags, { Name = "web" })
-  }
-  tag_specifications {
-    resource_type = "volume"
-    tags          = var.tags
-  }
-
-  update_default_version = true
-}
-```
-
-### 15.8 A read-only EC2 audit script (Bash + Python)
-
-```bash
-#!/usr/bin/env bash
-# ec2-audit.sh - read-only. Flags risky EC2 settings in the current Region.
-set -euo pipefail
-
-tmp="$(mktemp)"; trap 'rm -f "$tmp"' EXIT
-aws ec2 describe-instances --filters Name=instance-state-name,Values=running --output json > "$tmp"
-
-python3 -I - "$tmp" <<'PY'
-import json, sys
-
-with open(sys.argv[1]) as f:
-    reservations = json.load(f)["Reservations"]
-
-for r in reservations:
-    for i in r["Instances"]:
-        issues = []
-        if i.get("MetadataOptions", {}).get("HttpTokens") != "required":
-            issues.append("IMDSv1-ALLOWED")
-        if i.get("PublicIpAddress"):
-            issues.append("PUBLIC-IP")
-        if "IamInstanceProfile" not in i:
-            issues.append("NO-IAM-ROLE")
-        if i.get("KeyName"):
-            issues.append("KEYPAIR(info)")
-        if i.get("Monitoring", {}).get("State") != "enabled":
-            issues.append("BASIC-MONITORING(info)")
-        name = next((t["Value"] for t in i.get("Tags", []) if t["Key"] == "Name"), "-")
-        print(f"{i['InstanceId']:22} {name:28} {i['InstanceType']:12} {','.join(issues) or 'OK'}")
-PY
-```
-
-**Expected output:**
-
-```text
-i-0abc1234567890def    prod-web-01                  m7i.large    KEYPAIR(info)
-i-0def1234567890abc    legacy-batch                 t2.medium    IMDSv1-ALLOWED,PUBLIC-IP,NO-IAM-ROLE
-```
-
-(`(info)` items are design choices, not necessarily defects. A public IP is normal for a bastion or a public web tier, but should be deliberate.)
-
----
 
 ## 16. Production Troubleshooting Scenarios
 
